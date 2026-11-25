@@ -43,6 +43,18 @@ class KluddraApiClient(
     private val refreshMutex = Mutex()
 
     private val client = HttpClient(OkHttp) {
+        engine {
+            config {
+                // Hard transport guard: blocks cleartext HTTP to any non-private host (including redirects).
+                addInterceptor { chain ->
+                    val req = chain.request()
+                    if (!req.isHttps && !UrlSecurityPolicy.isPrivateLocalHost(req.url.host)) {
+                        throw java.io.IOException("Blocked cleartext HTTP request to public host: ${req.url.host}")
+                    }
+                    chain.proceed(req)
+                }
+            }
+        }
         install(ContentNegotiation) {
             json(json)
         }

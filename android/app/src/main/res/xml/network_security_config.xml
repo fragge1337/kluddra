@@ -1,17 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Strict HTTPS required for all public internet traffic -->
-    <base-config cleartextTrafficPermitted="false">
+    <!--
+        Android XML network-security-config does not support RFC1918 CIDR ranges (192.168.0.0/16, 10.0.0.0/8).
+        Cleartext HTTP is strictly blocked at the OkHttp network layer in KluddraApiClient for ALL public
+        domains and public IPs (including redirects), and is ONLY permitted for private LAN hosts when the
+        user explicitly approves the local HTTP warning dialog.
+    -->
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-
-    <!-- Local-only HTTP is additionally gated by explicit user opt-in and RFC1918 IP validation in UrlSecurityPolicy -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">local</domain>
-        <domain includeSubdomains="true">home.arpa</domain>
-        <domain includeSubdomains="true">10.0.2.2</domain>
-    </domain-config>
 </network-security-config>
