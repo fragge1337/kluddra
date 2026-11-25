@@ -45,6 +45,14 @@ class UrlSecurityPolicyTest {
         assertTrue(UrlSecurityPolicy.isPrivateLocalHost("nas.local"))
         assertTrue(UrlSecurityPolicy.isPrivateLocalHost("localhost"))
         assertFalse(UrlSecurityPolicy.isPrivateLocalHost("172.32.0.1"))
+        assertFalse(UrlSecurityPolicy.isPrivateLocalHost("100.64.0.5")) // ISP CGNAT must not allow cleartext HTTP
         assertFalse(UrlSecurityPolicy.isPrivateLocalHost("example.com"))
+    }
+
+    @Test
+    fun `embedded credentials, query strings, and fragments are rejected`() {
+        assertEquals(UrlValidationResult.Invalid, UrlSecurityPolicy.evaluate("https://user:pass@notes.example.com", false))
+        assertEquals(UrlValidationResult.Invalid, UrlSecurityPolicy.evaluate("https://notes.example.com?foo=bar", false))
+        assertEquals(UrlValidationResult.Invalid, UrlSecurityPolicy.evaluate("https://notes.example.com#frag", false))
     }
 }

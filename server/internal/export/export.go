@@ -39,7 +39,11 @@ func BuildMarkdownZIP(notes []model.Note, items []model.ShoppingItem) ([]byte, e
 		}
 		base := slugify(n.Title)
 		if base == "" {
-			base = "note-" + n.ID[:8]
+			suffix := n.ID
+			if len(suffix) > 8 {
+				suffix = suffix[:8]
+			}
+			base = "note-" + suffix
 		}
 		key := folder + "/" + base
 		usedNames[key]++

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/fragge1337/kluddra/server/internal/config"
 	"github.com/fragge1337/kluddra/server/internal/db"
@@ -69,9 +70,7 @@ func (s *Service) Push(ctx context.Context, userID string, req model.SyncPushReq
 	if device == "" {
 		device = "Device"
 	}
-	if len(device) > 40 {
-		device = device[:40]
-	}
+	device = truncateRunes(device, 40)
 
 	var (
 		results    = make([]model.SyncMutationResult, 0, len(req.Mutations))
@@ -334,8 +333,11 @@ func (s *Service) UpsertShoppingItem(ctx context.Context, userID, itemID, text s
 	} else if !id.IsValidUUID(itemID) {
 		return model.ShoppingItem{}, fmt.Errorf("%w: invalid item id", ErrInvalidInput)
 	}
-	if strings.TrimSpace(sortOrder) == "" {
+	sortOrder = strings.TrimSpace(sortOrder)
+	if sortOrder == "" {
 		sortOrder = fmt.Sprintf("m%013d", time.Now().UnixMilli())
+	} else if !isValidSortOrder(sortOrder) {
+		return model.ShoppingItem{}, fmt.Errorf("%w: invalid sort_order", ErrInvalidInput)
 	}
 
 	now := time.Now().UnixMilli()
@@ -788,8 +790,11 @@ func (s *Service) applyShoppingMutationTx(ctx context.Context, tx *sql.Tx, userI
 		if p.Text == "" || len(p.Text) > s.cfg.MaxItemTextLen {
 			return rejectedResult(mut, "VALIDATION_ERROR", "shopping item text is invalid"), nil
 		}
-		if strings.TrimSpace(p.SortOrder) == "" {
+		p.SortOrder = strings.TrimSpace(p.SortOrder)
+		if p.SortOrder == "" {
 			p.SortOrder = fmt.Sprintf("m%013d", now)
+		} else if !isValidSortOrder(p.SortOrder) {
+			return rejectedResult(mut, "VALIDATION_ERROR", "invalid sort_order"), nil
 		}
 		createdAt := p.CreatedAt
 		if createdAt <= 0 {
@@ -883,8 +888,8 @@ func (s *Service) createConflictCopyTx(ctx context.Context, tx *sql.Tx, userID s
 	} else {
 		conflictTitle = fmt.Sprintf("%s (konflikt – %s)", conflictTitle, device)
 	}
-	if len(conflictTitle) > s.cfg.MaxNoteTitleLen {
-		conflictTitle = conflictTitle[:s.cfg.MaxNoteTitleLen]
+	if utf8.RuneCountInString(conflictTitle) > s.cfg.MaxNoteTitleLen {
+		conflictTitle = truncateRunes(conflictTitle, s.cfg.MaxNoteTitleLen)
 	}
 
 	refID := original.ID
@@ -1114,4 +1119,23 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+func truncateRunes(s string, max int) string {
+	if utf8.RuneCountInString(s) <= max {
+		return s
+	}
+	return string([]rune(s)[:max])
+}
+
+func isValidSortOrder(s string) bool {
+	if len(s) == 0 || len(s) > 128 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x21 || s[i] > 0x7E {
+			return false
+		}
+	}
+	return true
 }

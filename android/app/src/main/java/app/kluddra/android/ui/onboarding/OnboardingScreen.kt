@@ -132,6 +132,7 @@ fun OnboardingScreen(
                             isError = resolvedError != null,
                             shape = RoundedCornerShape(18.dp),
                             keyboardOptions = KeyboardOptions(
+                                autoCorrectEnabled = false,
                                 keyboardType = KeyboardType.Uri,
                                 imeAction = ImeAction.Done
                             ),
@@ -228,6 +229,7 @@ fun OnboardingScreen(
                                 }
                             },
                             keyboardOptions = KeyboardOptions(
+                                autoCorrectEnabled = false,
                                 keyboardType = KeyboardType.Password,
                                 imeAction = ImeAction.Done
                             ),

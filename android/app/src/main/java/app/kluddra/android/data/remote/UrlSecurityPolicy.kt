@@ -29,6 +29,9 @@ object UrlSecurityPolicy {
         }
 
         val uri = runCatching { URI(withScheme) }.getOrNull() ?: return UrlValidationResult.Invalid
+        if (uri.userInfo != null || uri.rawQuery != null || uri.rawFragment != null) {
+            return UrlValidationResult.Invalid
+        }
         val scheme = uri.scheme?.lowercase() ?: return UrlValidationResult.Invalid
         val host = uri.host?.lowercase()?.takeIf { it.isNotBlank() } ?: return UrlValidationResult.Invalid
         if (uri.port < -1 || uri.port > 65535) return UrlValidationResult.Invalid
@@ -68,7 +71,6 @@ object UrlSecurityPolicy {
             if (a == 10) return true
             if (a == 192 && b == 168) return true
             if (a == 172 && b in 16..31) return true
-            if (a == 100 && b in 64..127) return true // Tailscale / CGNAT private range
         }
         return false
     }

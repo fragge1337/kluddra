@@ -92,8 +92,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleShareIntent(intent: Intent?) {
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
-            val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT)?.trim().orEmpty()
+            val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()?.take(256_000).orEmpty()
+            val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT)?.trim()?.take(300).orEmpty()
             if (text.isNotEmpty() || subject.isNotEmpty()) {
                 incomingShare.value = SharedIncomingNote(title = subject, body = text)
             }

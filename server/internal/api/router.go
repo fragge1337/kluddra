@@ -17,6 +17,7 @@ import (
 	"github.com/fragge1337/kluddra/server/internal/config"
 	"github.com/fragge1337/kluddra/server/internal/db"
 	"github.com/fragge1337/kluddra/server/internal/export"
+	"github.com/fragge1337/kluddra/server/internal/id"
 	"github.com/fragge1337/kluddra/server/internal/model"
 	kluddrasync "github.com/fragge1337/kluddra/server/internal/sync"
 )
@@ -25,22 +26,30 @@ type claimsCtxKey struct{}
 
 // Server wires HTTP routes, middleware, auth, sync, and export services.
 type Server struct {
-	cfg         config.Config
-	store       *db.Store
-	authSvc     *auth.Service
-	syncSvc     *kluddrasync.Service
-	logger      *slog.Logger
-	authLimiter *RateLimiter
+	cfg                config.Config
+	store              *db.Store
+	authSvc            *auth.Service
+	syncSvc            *kluddrasync.Service
+	logger             *slog.Logger
+	authIPLimiter      *RateLimiter
+	authUserLimiter    *RateLimiter
+	globalSetupLimiter *RateLimiter
+	apiLimiter         *RateLimiter
+	backupLimiter      *RateLimiter
 }
 
 func NewServer(cfg config.Config, store *db.Store, authSvc *auth.Service, syncSvc *kluddrasync.Service, logger *slog.Logger) *Server {
 	return &Server{
-		cfg:         cfg,
-		store:       store,
-		authSvc:     authSvc,
-		syncSvc:     syncSvc,
-		logger:      logger,
-		authLimiter: NewRateLimiter(10, 8), // Burst 8, refill 10/min per IP+user
+		cfg:                cfg,
+		store:              store,
+		authSvc:            authSvc,
+		syncSvc:            syncSvc,
+		logger:             logger,
+		authIPLimiter:      NewRateLimiter(12, 10),  // Per-IP auth attempts (before Argon2id)
+		authUserLimiter:    NewRateLimiter(10, 8),   // Per-username (blocks distributed stuffing)
+		globalSetupLimiter: NewRateLimiter(0.5, 5),  // Max 5 setup attempts burst globally
+		apiLimiter:         NewRateLimiter(180, 90), // General per-IP API flood protection
+		backupLimiter:      NewRateLimiter(1, 2),    // Admin backup disk-fill protection
 	}
 }
 
@@ -81,7 +90,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/export", s.requireAuth(s.handleExport))
 	mux.HandleFunc("POST /api/v1/admin/backup", s.requireAuth(s.handleAdminBackup))
 
-	return s.withSecurityHeaders(s.withSafeLogging(mux))
+	return s.withRecover(s.withSecurityHeaders(s.withSafeLogging(s.withGeneralRateLimit(mux))))
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +116,7 @@ func (s *Server) handleServerInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
-	if !s.allowAuthRate(r, "setup") {
+	if !s.globalSetupLimiter.Allow("global_setup") || !s.allowAuthIPRate(r, "setup") {
 		w.Header().Set("Retry-After", "60")
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many setup attempts, try again later")
 		return
@@ -129,6 +138,8 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, auth.ErrSetupNotAllowed):
 			writeError(w, http.StatusForbidden, "SETUP_DISABLED", "initial setup has already been completed")
+		case errors.Is(err, auth.ErrSetupLocked):
+			writeError(w, http.StatusTooManyRequests, "SETUP_LOCKED", "initial setup locked after too many failed attempts")
 		case errors.Is(err, auth.ErrInvalidSetupCode):
 			writeError(w, http.StatusUnauthorized, "INVALID_SETUP_CODE", "invalid setup code")
 		case errors.Is(err, auth.ErrValidation):
@@ -142,6 +153,13 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	// Per-IP rate limit BEFORE parsing JSON or burning Argon2id CPU/RAM.
+	if !s.allowAuthIPRate(r, "login") {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many login attempts, try again later")
+		return
+	}
+
 	var req struct {
 		Username   string `json:"username"`
 		Password   string `json:"password"`
@@ -152,9 +170,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.allowAuthRate(r, "login:"+strings.ToLower(strings.TrimSpace(req.Username))) {
+	// Secondary per-username limiter blocks distributed credential stuffing across many IPs.
+	normUser := strings.ToLower(strings.TrimSpace(req.Username))
+	if normUser != "" && !s.authUserLimiter.Allow("user:"+normUser) {
 		w.Header().Set("Retry-After", "60")
-		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many login attempts, try again later")
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many login attempts for this account, try again later")
 		return
 	}
 
@@ -171,7 +191,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	if !s.allowAuthRate(r, "refresh") {
+	if !s.allowAuthIPRate(r, "refresh") {
 		w.Header().Set("Retry-After", "60")
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many token refresh attempts")
 		return
@@ -220,6 +240,10 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 	claims := getClaims(r.Context())
 	targetID := r.PathValue("id")
+	if !id.IsValidUUID(targetID) {
+		writeError(w, http.StatusBadRequest, "INVALID_ID", "invalid session id")
+		return
+	}
 	if err := s.authSvc.Logout(r.Context(), claims.Sub, targetID); err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to revoke session")
 		return
@@ -498,6 +522,11 @@ func (s *Server) handleAdminBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "administrator privileges required")
 		return
 	}
+	if !s.backupLimiter.Allow("admin_backup") {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "backup rate limit exceeded")
+		return
+	}
 	backupDir := filepath.Join(s.cfg.DataDir, "backups")
 	path, err := s.store.Backup(r.Context(), backupDir)
 	if err != nil {
@@ -534,9 +563,37 @@ func getClaims(ctx context.Context) auth.Claims {
 	return c
 }
 
-func (s *Server) allowAuthRate(r *http.Request, scope string) bool {
+func (s *Server) allowAuthIPRate(r *http.Request, scope string) bool {
 	ip := ClientIP(r, s.cfg.TrustedProxies)
-	return s.authLimiter.Allow(ip + "|" + scope)
+	return s.authIPLimiter.Allow(ip + "|" + scope)
+}
+
+func (s *Server) withGeneralRateLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		ip := ClientIP(r, s.cfg.TrustedProxies)
+		if !s.apiLimiter.Allow(ip) {
+			w.Header().Set("Retry-After", "60")
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many requests")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) withRecover(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				s.logger.Error("http_panic_recovered", "method", r.Method, "path", r.URL.Path)
+				writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
@@ -545,6 +602,9 @@ func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		w.Header().Set("Permissions-Policy", "interest-cohort=()")
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -579,6 +639,10 @@ func (s *Server) withSafeLogging(next http.Handler) http.Handler {
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, maxBytes int64, dst any) error {
+	ct := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
+	if ct != "" && !strings.HasPrefix(ct, "application/json") {
+		return errors.New("Content-Type must be application/json")
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()

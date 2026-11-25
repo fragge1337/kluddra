@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/fragge1337/kluddra/server/internal/config"
 	"github.com/fragge1337/kluddra/server/internal/db"
@@ -26,15 +27,30 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
+const (
+	maxSetupFailures      = 10
+	maxAccessTokenBytes   = 4096
+	maxConcurrentArgon2   = 4
+	maxArgon2MemoryKB     = 262144 // 256 MiB upper safety bound
+	maxArgon2Iterations   = 10
+	maxArgon2Parallelism  = 8
+)
+
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrInvalidToken       = errors.New("invalid or expired token")
 	ErrTokenReused        = errors.New("refresh token reuse detected")
 	ErrSetupNotAllowed    = errors.New("initial setup already completed")
+	ErrSetupLocked        = errors.New("initial setup locked after too many failed attempts; restart container")
 	ErrInvalidSetupCode   = errors.New("invalid setup code")
 	ErrUsernameTaken      = errors.New("username already exists")
 	ErrValidation         = errors.New("validation error")
 )
+
+type jwtHeader struct {
+	Alg string `json:"alg"`
+	Typ string `json:"typ"`
+}
 
 type Claims struct {
 	Sub       string `json:"sub"`
@@ -49,9 +65,11 @@ type Service struct {
 	store     *db.Store
 	cfg       config.Config
 	jwtSecret []byte
+	argonSem  chan struct{}
 
-	setupMu   sync.RWMutex
-	setupCode string
+	setupMu       sync.Mutex
+	setupCode     string
+	setupFailures int
 }
 
 // NewService initializes authentication, loading or generating the persistent JWT signing key.
@@ -65,6 +83,7 @@ func NewService(ctx context.Context, store *db.Store, cfg config.Config) (*Servi
 		store:     store,
 		cfg:       cfg,
 		jwtSecret: secret,
+		argonSem:  make(chan struct{}, maxConcurrentArgon2),
 	}
 
 	required, err := svc.IsSetupRequired(ctx)
@@ -73,6 +92,9 @@ func NewService(ctx context.Context, store *db.Store, cfg config.Config) (*Servi
 	}
 	if required {
 		if cfg.AdminSetupToken != "" {
+			if len(cfg.AdminSetupToken) < 12 {
+				return nil, errors.New("KLUDDRA_ADMIN_SETUP_TOKEN must be at least 12 characters")
+			}
 			svc.setupCode = cfg.AdminSetupToken
 		} else {
 			code, err := generateSetupCode()
@@ -88,8 +110,8 @@ func NewService(ctx context.Context, store *db.Store, cfg config.Config) (*Servi
 
 // SetupCode returns the active one-time setup code if initial setup has not yet completed.
 func (s *Service) SetupCode() string {
-	s.setupMu.RLock()
-	defer s.setupMu.RUnlock()
+	s.setupMu.Lock()
+	defer s.setupMu.Unlock()
 	return s.setupCode
 }
 
@@ -102,34 +124,67 @@ func (s *Service) IsSetupRequired(ctx context.Context) (bool, error) {
 	return count == 0, nil
 }
 
-// CompleteSetup creates the first administrator account using the bootstrap setup code.
+// CompleteSetup atomically creates the first administrator account using the bootstrap setup code.
 func (s *Service) CompleteSetup(ctx context.Context, setupCode, username, password, deviceName string) (model.AuthTokensResponse, error) {
-	required, err := s.IsSetupRequired(ctx)
-	if err != nil {
-		return model.AuthTokensResponse{}, err
+	s.setupMu.Lock()
+	defer s.setupMu.Unlock()
+
+	if s.setupFailures >= maxSetupFailures {
+		return model.AuthTokensResponse{}, ErrSetupLocked
 	}
-	if !required {
+	if s.setupCode == "" {
 		return model.AuthTokensResponse{}, ErrSetupNotAllowed
 	}
 
-	s.setupMu.RLock()
-	expected := s.setupCode
-	s.setupMu.RUnlock()
-
-	if expected == "" || subtle.ConstantTimeCompare([]byte(strings.TrimSpace(setupCode)), []byte(expected)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(setupCode)), []byte(s.setupCode)) != 1 {
+		s.setupFailures++
+		if s.setupFailures >= maxSetupFailures {
+			s.setupCode = ""
+			return model.AuthTokensResponse{}, ErrSetupLocked
+		}
 		return model.AuthTokensResponse{}, ErrInvalidSetupCode
 	}
 
-	user, err := s.CreateUser(ctx, username, password, true)
+	username = strings.TrimSpace(username)
+	if err := validateCredentials(username, password); err != nil {
+		return model.AuthTokensResponse{}, err
+	}
+
+	hash, err := s.HashPassword(ctx, password)
 	if err != nil {
 		return model.AuthTokensResponse{}, err
 	}
 
-	// Permanently clear bootstrap setup code once first admin exists.
-	s.setupMu.Lock()
-	s.setupCode = ""
-	s.setupMu.Unlock()
+	now := time.Now().UnixMilli()
+	user := model.User{
+		ID:           id.NewUUIDv7(),
+		Username:     username,
+		PasswordHash: hash,
+		IsAdmin:      true,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
 
+	err = s.store.WithWriteTx(ctx, func(tx *sql.Tx) error {
+		var count int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
+			return err
+		}
+		if count > 0 {
+			return ErrSetupNotAllowed
+		}
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO users (id, username, password_hash, is_admin, sync_seq, created_at, updated_at)
+			VALUES (?, ?, ?, 1, 0, ?, ?)
+		`, user.ID, user.Username, user.PasswordHash, user.CreatedAt, user.UpdatedAt)
+		return err
+	})
+	if err != nil {
+		return model.AuthTokensResponse{}, err
+	}
+
+	// Permanently wipe bootstrap setup code once first admin exists.
+	s.setupCode = ""
 	return s.issueSessionTokens(ctx, user, deviceName, "")
 }
 
@@ -140,7 +195,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password string, isA
 		return model.User{}, err
 	}
 
-	hash, err := s.HashPassword(password)
+	hash, err := s.HashPassword(ctx, password)
 	if err != nil {
 		return model.User{}, err
 	}
@@ -183,6 +238,10 @@ func (s *Service) CreateUser(ctx context.Context, username, password string, isA
 // Login verifies username and password and issues a new token pair.
 func (s *Service) Login(ctx context.Context, username, password, deviceName string) (model.AuthTokensResponse, error) {
 	username = strings.TrimSpace(username)
+	if len(username) == 0 || len(username) > 64 || len(password) == 0 || len(password) > 128 {
+		return model.AuthTokensResponse{}, ErrInvalidCredentials
+	}
+
 	var user model.User
 	var isAdmin int
 	err := s.store.DB.QueryRowContext(ctx, `
@@ -190,8 +249,8 @@ func (s *Service) Login(ctx context.Context, username, password, deviceName stri
 		FROM users WHERE username = ?
 	`, username).Scan(&user.ID, &user.Username, &user.PasswordHash, &isAdmin, &user.SyncSeq, &user.CreatedAt, &user.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		// Burn comparable CPU time to prevent username enumeration via timing.
-		_, _ = s.HashPassword("dummy-password-for-timing")
+		// Burn comparable Argon2id time to prevent username enumeration via timing.
+		_, _ = s.HashPassword(ctx, "dummy-password-for-timing-equalization")
 		return model.AuthTokensResponse{}, ErrInvalidCredentials
 	}
 	if err != nil {
@@ -199,7 +258,7 @@ func (s *Service) Login(ctx context.Context, username, password, deviceName stri
 	}
 	user.IsAdmin = isAdmin == 1
 
-	ok, err := VerifyPassword(password, user.PasswordHash)
+	ok, err := s.verifyPasswordBounded(ctx, password, user.PasswordHash)
 	if err != nil || !ok {
 		return model.AuthTokensResponse{}, ErrInvalidCredentials
 	}
@@ -207,78 +266,127 @@ func (s *Service) Login(ctx context.Context, username, password, deviceName stri
 	return s.issueSessionTokens(ctx, user, deviceName, "")
 }
 
-// Refresh rotates a refresh token, revoking the whole family if reuse is detected.
+// Refresh atomically rotates a refresh token inside a single write transaction,
+// preventing TOCTOU races and revoking the entire token family if reuse is detected.
 func (s *Service) Refresh(ctx context.Context, rawRefreshToken, deviceName string) (model.AuthTokensResponse, error) {
 	rawRefreshToken = strings.TrimSpace(rawRefreshToken)
-	if rawRefreshToken == "" {
+	if len(rawRefreshToken) < 20 || len(rawRefreshToken) > 256 {
 		return model.AuthTokensResponse{}, ErrInvalidToken
 	}
 
 	tokenHash := sha256Hex(rawRefreshToken)
-	now := time.Now().UnixMilli()
+	rawReplacement, err := randomBase64URL(32)
+	if err != nil {
+		return model.AuthTokensResponse{}, err
+	}
+	now := time.Now()
+	nowMs := now.UnixMilli()
+	expiresMs := now.Add(s.cfg.RefreshTokenTTL).UnixMilli()
+	newSessionID := id.NewUUIDv7()
 
 	var (
-		sessionID   string
-		userID      string
-		tokenFamily string
-		storedDev   string
-		expiresAt   int64
-		revokedAt   sql.NullInt64
+		user        model.User
+		tokenReused bool
 	)
 
-	err := s.store.DB.QueryRowContext(ctx, `
-		SELECT id, user_id, token_family, device_name, expires_at, revoked_at
-		FROM sessions WHERE token_hash = ?
-	`, tokenHash).Scan(&sessionID, &userID, &tokenFamily, &storedDev, &expiresAt, &revokedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return model.AuthTokensResponse{}, ErrInvalidToken
+	err = s.store.WithWriteTx(ctx, func(tx *sql.Tx) error {
+		var (
+			sessionID   string
+			userID      string
+			tokenFamily string
+			storedDev   string
+			expiresAt   int64
+			revokedAt   sql.NullInt64
+		)
+
+		scanErr := tx.QueryRowContext(ctx, `
+			SELECT id, user_id, token_family, device_name, expires_at, revoked_at
+			FROM sessions WHERE token_hash = ?
+		`, tokenHash).Scan(&sessionID, &userID, &tokenFamily, &storedDev, &expiresAt, &revokedAt)
+		if errors.Is(scanErr, sql.ErrNoRows) {
+			return ErrInvalidToken
+		}
+		if scanErr != nil {
+			return scanErr
+		}
+
+		// Reuse detection: a previously rotated or revoked token was replayed!
+		// Revoke the entire family and COMMIT that revocation before returning ErrTokenReused.
+		if revokedAt.Valid {
+			if _, e := tx.ExecContext(ctx, `
+				UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?)
+				WHERE token_family = ?
+			`, nowMs, tokenFamily); e != nil {
+				return e
+			}
+			tokenReused = true
+			return nil
+		}
+
+		if nowMs >= expiresAt {
+			return ErrInvalidToken
+		}
+
+		var isAdmin int
+		if uerr := tx.QueryRowContext(ctx, `
+			SELECT id, username, is_admin, sync_seq, created_at, updated_at
+			FROM users WHERE id = ?
+		`, userID).Scan(&user.ID, &user.Username, &isAdmin, &user.SyncSeq, &user.CreatedAt, &user.UpdatedAt); uerr != nil {
+			return ErrInvalidToken
+		}
+		user.IsAdmin = isAdmin == 1
+
+		// Revoke the used session row and insert rotated replacement atomically.
+		if _, e := tx.ExecContext(ctx, `
+			UPDATE sessions SET revoked_at = ?, last_used_at = ? WHERE id = ?
+		`, nowMs, nowMs, sessionID); e != nil {
+			return e
+		}
+
+		finalDev := sanitizeDeviceName(deviceName)
+		if strings.TrimSpace(deviceName) == "" {
+			finalDev = storedDev
+		}
+		_, e := tx.ExecContext(ctx, `
+			INSERT INTO sessions (id, user_id, token_hash, token_family, device_name, created_at, last_used_at, expires_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, newSessionID, user.ID, sha256Hex(rawReplacement), tokenFamily, finalDev, nowMs, nowMs, expiresMs)
+		return e
+	})
+	if err != nil {
+		return model.AuthTokensResponse{}, err
 	}
+	if tokenReused {
+		return model.AuthTokensResponse{}, ErrTokenReused
+	}
+
+	claims := Claims{
+		Sub:       user.ID,
+		Username:  user.Username,
+		SessionID: newSessionID,
+		IsAdmin:   user.IsAdmin,
+		IssuedAt:  now.Unix(),
+		ExpiresAt: now.Add(s.cfg.AccessTokenTTL).Unix(),
+	}
+	accessToken, err := signJWT(claims, s.jwtSecret)
 	if err != nil {
 		return model.AuthTokensResponse{}, err
 	}
 
-	// Reuse detection: a previously rotated or revoked token was replayed!
-	if revokedAt.Valid {
-		_ = s.store.WithWriteTx(ctx, func(tx *sql.Tx) error {
-			_, e := tx.ExecContext(ctx, `
-				UPDATE sessions SET revoked_at = COALESCE(revoked_at, ?)
-				WHERE token_family = ?
-			`, now, tokenFamily)
-			return e
-		})
-		return model.AuthTokensResponse{}, ErrTokenReused
-	}
-
-	if now >= expiresAt {
-		return model.AuthTokensResponse{}, ErrInvalidToken
-	}
-
-	var user model.User
-	var isAdmin int
-	if err := s.store.DB.QueryRowContext(ctx, `
-		SELECT id, username, is_admin, sync_seq, created_at, updated_at
-		FROM users WHERE id = ?
-	`, userID).Scan(&user.ID, &user.Username, &isAdmin, &user.SyncSeq, &user.CreatedAt, &user.UpdatedAt); err != nil {
-		return model.AuthTokensResponse{}, ErrInvalidToken
-	}
-	user.IsAdmin = isAdmin == 1
-
-	// Revoke the used session row before issuing rotated replacement in same family.
-	if err := s.store.WithWriteTx(ctx, func(tx *sql.Tx) error {
-		_, e := tx.ExecContext(ctx, `UPDATE sessions SET revoked_at = ?, last_used_at = ? WHERE id = ?`, now, now, sessionID)
-		return e
-	}); err != nil {
-		return model.AuthTokensResponse{}, err
-	}
-
-	if strings.TrimSpace(deviceName) == "" {
-		deviceName = storedDev
-	}
-	return s.issueSessionTokens(ctx, user, deviceName, tokenFamily)
+	return model.AuthTokensResponse{
+		AccessToken:  accessToken,
+		RefreshToken: rawReplacement,
+		ExpiresIn:    int64(s.cfg.AccessTokenTTL.Seconds()),
+		SessionID:    newSessionID,
+		User:         user,
+	}, nil
 }
 
 // Logout revokes a specific session belonging to userID.
 func (s *Service) Logout(ctx context.Context, userID, sessionID string) error {
+	if !id.IsValidUUID(sessionID) {
+		return nil
+	}
 	now := time.Now().UnixMilli()
 	return s.store.WithWriteTx(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `
@@ -315,10 +423,24 @@ func (s *Service) ListSessions(ctx context.Context, userID, currentSessionID str
 	return sessions, rows.Err()
 }
 
-// VerifyAccessToken validates signature, expiry, and ensures the session has not been revoked.
+// VerifyAccessToken validates token size, JWT header alg/typ, HMAC-SHA256 signature,
+// expiry, iat sanity, and verifies the backing session has not been revoked.
 func (s *Service) VerifyAccessToken(ctx context.Context, token string) (Claims, error) {
+	if len(token) == 0 || len(token) > maxAccessTokenBytes {
+		return Claims{}, ErrInvalidToken
+	}
+
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
+		return Claims{}, ErrInvalidToken
+	}
+
+	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return Claims{}, ErrInvalidToken
+	}
+	var hdr jwtHeader
+	if err := json.Unmarshal(headerBytes, &hdr); err != nil || hdr.Alg != "HS256" || hdr.Typ != "JWT" {
 		return Claims{}, ErrInvalidToken
 	}
 
@@ -343,7 +465,8 @@ func (s *Service) VerifyAccessToken(ctx context.Context, token string) (Claims, 
 		return Claims{}, ErrInvalidToken
 	}
 
-	if time.Now().Unix() >= claims.ExpiresAt || claims.Sub == "" || claims.SessionID == "" {
+	nowSec := time.Now().Unix()
+	if nowSec >= claims.ExpiresAt || claims.IssuedAt > nowSec+60 || claims.Sub == "" || !id.IsValidUUID(claims.SessionID) {
 		return Claims{}, ErrInvalidToken
 	}
 
@@ -360,8 +483,15 @@ func (s *Service) VerifyAccessToken(ctx context.Context, token string) (Claims, 
 	return claims, nil
 }
 
-// HashPassword produces an Argon2id PHC-encoded password hash.
-func (s *Service) HashPassword(password string) (string, error) {
+// HashPassword produces an Argon2id PHC-encoded password hash, bounded by a concurrency semaphore.
+func (s *Service) HashPassword(ctx context.Context, password string) (string, error) {
+	select {
+	case s.argonSem <- struct{}{}:
+		defer func() { <-s.argonSem }()
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
@@ -375,6 +505,16 @@ func (s *Service) HashPassword(password string) (string, error) {
 		base64.RawStdEncoding.EncodeToString(salt),
 		base64.RawStdEncoding.EncodeToString(hash),
 	), nil
+}
+
+func (s *Service) verifyPasswordBounded(ctx context.Context, password, encoded string) (bool, error) {
+	select {
+	case s.argonSem <- struct{}{}:
+		defer func() { <-s.argonSem }()
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+	return VerifyPassword(password, encoded)
 }
 
 // VerifyPassword validates a plaintext password against a PHC Argon2id hash in constant time.
@@ -403,13 +543,17 @@ func VerifyPassword(password, encoded string) (bool, error) {
 			parallelism = uint8(val)
 		}
 	}
+	if memory < 8192 || memory > maxArgon2MemoryKB || iterations < 1 || iterations > maxArgon2Iterations || parallelism < 1 || parallelism > maxArgon2Parallelism {
+		return false, errors.New("argon2 params out of safe bounds")
+	}
+
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
-	if err != nil {
-		return false, err
+	if err != nil || len(salt) < 8 || len(salt) > 64 {
+		return false, errors.New("invalid salt")
 	}
 	expectedHash, err := base64.RawStdEncoding.DecodeString(parts[5])
-	if err != nil {
-		return false, err
+	if err != nil || len(expectedHash) < 16 || len(expectedHash) > 64 {
+		return false, errors.New("invalid hash")
 	}
 
 	computed := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(len(expectedHash)))
@@ -507,15 +651,16 @@ func loadOrCreateJWTSecret(dataDir, envSecret string) ([]byte, error) {
 
 func generateSetupCode() (string, error) {
 	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-	raw := make([]byte, 8)
+	raw := make([]byte, 12)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
 	}
-	chars := make([]byte, 8)
+	chars := make([]byte, 12)
 	for i, b := range raw {
 		chars[i] = alphabet[int(b)%len(alphabet)]
 	}
-	return fmt.Sprintf("KLUD-%s-%s", string(chars[:4]), string(chars[4:])), nil
+	// 60 bits of entropy (32^12) -> unguessable even without rate limiting.
+	return fmt.Sprintf("KLUD-%s-%s-%s", string(chars[:4]), string(chars[4:8]), string(chars[8:12])), nil
 }
 
 func validateCredentials(username, password string) error {
@@ -539,10 +684,15 @@ func sanitizeDeviceName(name string) string {
 	if name == "" {
 		return "Android"
 	}
-	if len(name) > 80 {
-		return name[:80]
+	return truncateRunes(name, 80)
+}
+
+func truncateRunes(s string, max int) string {
+	if utf8.RuneCountInString(s) <= max {
+		return s
 	}
-	return name
+	runes := []rune(s)
+	return string(runes[:max])
 }
 
 func randomBase64URL(n int) (string, error) {

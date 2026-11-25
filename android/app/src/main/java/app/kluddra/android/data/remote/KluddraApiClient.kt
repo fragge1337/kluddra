@@ -43,10 +43,23 @@ class KluddraApiClient(
     private val refreshMutex = Mutex()
 
     private val client = HttpClient(OkHttp) {
+        followRedirects = false
         engine {
             config {
-                // Hard transport guard: blocks cleartext HTTP to any non-private host (including redirects).
-                addInterceptor { chain ->
+                // Never follow HTTP/HTTPS redirects automatically: prevents credential/token
+                // leakage or HTTPS->HTTP downgrade via malicious 301/302 responses.
+                followRedirects(false)
+                followSslRedirects(false)
+                // Enforce TLS 1.2+ (MODERN_TLS) for all HTTPS connections; CLEARTEXT is strictly
+                // gated below by our network interceptor to RFC1918/local hosts only.
+                connectionSpecs(
+                    listOf(
+                        okhttp3.ConnectionSpec.MODERN_TLS,
+                        okhttp3.ConnectionSpec.CLEARTEXT
+                    )
+                )
+                // Network-level transport guard runs right before bytes hit the socket.
+                addNetworkInterceptor { chain ->
                     val req = chain.request()
                     if (!req.isHttps && !UrlSecurityPolicy.isPrivateLocalHost(req.url.host)) {
                         throw java.io.IOException("Blocked cleartext HTTP request to public host: ${req.url.host}")
@@ -109,8 +122,14 @@ class KluddraApiClient(
         val creds = preferences.getCredentials() ?: return
         val validUrl = runCatching { requireAllowedUrl(creds.serverUrl, creds.allowLocalHttp) }.getOrNull() ?: return
         runCatching {
-            client.post("$validUrl/api/v1/auth/logout") {
+            val resp = client.post("$validUrl/api/v1/auth/logout") {
                 header(HttpHeaders.Authorization, "Bearer ${creds.accessToken}")
+            }
+            if (resp.status == HttpStatusCode.Unauthorized) {
+                val freshAccess = refreshAccessToken(validUrl)
+                client.post("$validUrl/api/v1/auth/logout") {
+                    header(HttpHeaders.Authorization, "Bearer $freshAccess")
+                }
             }
         }
     }

@@ -115,7 +115,7 @@ func (s *Store) Backup(ctx context.Context, destDir string) (string, error) {
 	if err := os.MkdirAll(destDir, 0o750); err != nil {
 		return "", fmt.Errorf("create backup dir: %w", err)
 	}
-	filename := fmt.Sprintf("kluddra-%s.db", time.Now().UTC().Format("20060102-150405"))
+	filename := fmt.Sprintf("kluddra-%s-%03d.db", time.Now().UTC().Format("20060102-150405"), time.Now().UTC().Nanosecond()/1e6)
 	targetPath := filepath.Join(destDir, filename)
 
 	s.writeMu.Lock()
