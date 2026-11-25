@@ -1,0 +1,32 @@
+# OS & Editors
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+*.iml
+
+# Go / Server
+server/bin/
+server/data/
+*.db
+*.db-wal
+*.db-shm
+*.bak
+*.exe
+coverage.out
+
+# Android / Gradle
+android/.gradle/
+android/local.properties
+android/**/build/
+android/captures/
+android/.cxx/
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# Deploy runtime data
+deploy/data/
+.env

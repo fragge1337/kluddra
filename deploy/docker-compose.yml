@@ -1,0 +1,26 @@
+services:
+  kluddra:
+    image: ghcr.io/fragge1337/kluddra-server:latest
+    container_name: kluddra
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - KLUDDRA_PORT=8080
+      - KLUDDRA_DATA_DIR=/data
+      - KLUDDRA_TRUSTED_PROXIES=127.0.0.1/32,172.16.0.0/12,192.168.0.0/16
+      - KLUDDRA_BACKUP_ENABLED=true
+      - KLUDDRA_BACKUP_RETAIN_DAYS=14
+      - KLUDDRA_TRASH_RETAIN_DAYS=30
+      - KLUDDRA_LOG_LEVEL=info
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["/kluddra", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

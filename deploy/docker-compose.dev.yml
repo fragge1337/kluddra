@@ -1,0 +1,17 @@
+services:
+  kluddra:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    container_name: kluddra-dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - KLUDDRA_PORT=8080
+      - KLUDDRA_DATA_DIR=/data
+      - KLUDDRA_LOG_LEVEL=debug
+    read_only: true
+    security_opt:
+      - no-new-privileges:true

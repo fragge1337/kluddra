@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kluddra</string>
+    <string name="app_tagline">Självhostade anteckningar, vackert enkelt</string>
+
+    <!-- Navigation -->
+    <string name="nav_notes">Anteckningar</string>
+    <string name="nav_shopping">Inköpslista</string>
+    <string name="nav_settings">Inställningar</string>
+    <string name="nav_trash">Papperskorg</string>
+    <string name="action_back">Tillbaka</string>
+
+    <!-- Notes Overview -->
+    <string name="search_notes_placeholder">Sök i Kluddra</string>
+    <string name="clear_search">Rensa sökning</string>
+    <string name="toggle_layout_grid">Byt till rutnät</string>
+    <string name="toggle_layout_list">Byt till lista</string>
+    <string name="section_pinned">Fästa</string>
+    <string name="section_notes">Anteckningar</string>
+    <string name="new_note">Ny anteckning</string>
+    <string name="empty_notes_title">Skriv ner din första tanke</string>
+    <string name="empty_notes_subtitle">Tryck på knappen nedan för att börja skriva. Allt sparas automatiskt och fungerar offline.</string>
+    <string name="empty_search_title">Inga matchande anteckningar</string>
+    <string name="empty_search_subtitle">Prova ett annat sökord eller rensa sökningen.</string>
+    <string name="untitled_note">Namnlös</string>
+    <string name="badge_read_only">Skrivskyddad</string>
+    <string name="badge_conflict">Konfliktkopia</string>
+    <string name="select_note_prompt">Välj en anteckning eller skapa en ny</string>
+
+    <!-- Note Editor -->
+    <string name="editor_title_hint">Rubrik</string>
+    <string name="editor_body_hint">Börja skriva…</string>
+    <string name="action_pin">Fäst anteckning</string>
+    <string name="action_unpin">Avfäst anteckning</string>
+    <string name="action_lock">Skrivskydda</string>
+    <string name="action_unlock">Lås upp för redigering</string>
+    <string name="action_share">Dela</string>
+    <string name="action_delete">Lägg i papperskorg</string>
+    <string name="read_only_banner">Skrivskyddad – lås upp för att redigera</string>
+    <string name="conflict_banner">En konfliktkopia skapades så inga offlineändringar gick förlorade. Granska och radera när du är klar.</string>
+    <string name="snackbar_note_trashed">Anteckning lagd i papperskorgen</string>
+    <string name="action_undo">Ångra</string>
+    <string name="share_chooser_title">Dela anteckning</string>
+
+    <!-- Trash -->
+    <string name="trash_title">Papperskorg</string>
+    <string name="trash_empty_title">Papperskorgen är tom</string>
+    <string name="trash_empty_subtitle">Raderade anteckningar ligger kvar här i 30 dagar innan de tas bort permanent.</string>
+    <string name="trash_retention_hint">Anteckningar i papperskorgen rensas automatiskt efter 30 dagar.</string>
+    <string name="action_restore">Återställ</string>
+    <string name="action_delete_forever">Radera permanent</string>
+    <string name="action_empty_trash">Töm papperskorg</string>
+    <string name="confirm_empty_trash_title">Töm papperskorgen?</string>
+    <string name="confirm_empty_trash_body">Alla anteckningar i papperskorgen raderas permanent och kan inte återskapas.</string>
+    <string name="action_cancel">Avbryt</string>
+    <string name="action_confirm">Bekräfta</string>
+
+    <!-- Shopping List -->
+    <string name="shopping_title">Inköpslista</string>
+    <string name="shopping_remaining_count">%1$d kvar</string>
+    <string name="shopping_all_done">Allt klart</string>
+    <string name="shopping_add_placeholder">Lägg till vara…</string>
+    <string name="shopping_add_button">Lägg till</string>
+    <string name="shopping_checked_section">Avbockade (%1$d)</string>
+    <string name="shopping_clear_checked">Rensa avbockade</string>
+    <string name="shopping_clear_all">Töm listan</string>
+    <string name="shopping_empty_title">Inköpslistan är redo</string>
+    <string name="shopping_empty_subtitle">Lägg till varor nedan och bocka av med en hand i butiken.</string>
+    <string name="shopping_drag_handle">Dra för att ändra ordning</string>
+    <string name="shopping_edit_item">Redigera vara</string>
+    <string name="shopping_delete_item">Ta bort vara</string>
+    <string name="shopping_item_removed">Vara borttagen</string>
+    <string name="confirm_clear_all_title">Töm hela inköpslistan?</string>
+    <string name="confirm_clear_all_body">Alla %1$d varor tas bort så du kan börja om från början.</string>
+    <string name="shopping_cleared_snackbar">Inköpslistan tömdes</string>
+
+    <!-- Sync Status -->
+    <string name="sync_status_synced">Synkad</string>
+    <string name="sync_status_syncing">Synkar…</string>
+    <string name="sync_status_offline">Offline – sparad lokalt</string>
+    <string name="sync_status_pending">%1$d väntande ändringar</string>
+    <string name="sync_status_error">Kunde inte nå servern</string>
+    <string name="sync_status_auth_expired">Sessionen har gått ut – logga in igen</string>
+    <string name="action_sync_now">Synka nu</string>
+
+    <!-- Onboarding & Connection -->
+    <string name="onboarding_headline">Dina anteckningar.\nDin server.</string>
+    <string name="onboarding_subtitle">Anslut till din självhostade Kluddra-server på din NAS eller Linux-server.</string>
+    <string name="server_url_label">Serveradress</string>
+    <string name="server_url_hint">https://notes.mindoman.se</string>
+    <string name="action_connect">Fortsätt</string>
+    <string name="username_label">Användarnamn</string>
+    <string name="password_label">Lösenord</string>
+    <string name="setup_code_label">Engångskod för uppstart (från serverloggen)</string>
+    <string name="setup_heading">Skapa ditt första konto</string>
+    <string name="setup_subtitle">Denna Kluddra-server är helt ny. Ange engångskoden som skrivs ut i din Docker-containers loggar.</string>
+    <string name="login_heading">Logga in</string>
+    <string name="login_subtitle">Ansluten till %1$s</string>
+    <string name="action_create_account">Skapa konto</string>
+    <string name="action_sign_in">Logga in</string>
+    <string name="action_change_server">Byt server</string>
+    <string name="local_http_warning_title">Okrypterad lokal anslutning</string>
+    <string name="local_http_warning_body">Du ansluter över okrypterad HTTP på ditt lokala nätverk (%1$s). Använd detta endast på ditt privata hemnätverk, aldrig över internet.</string>
+    <string name="local_http_warning_confirm">Tillåt lokal HTTP</string>
+    <string name="error_public_http_blocked">Okrypterad HTTP blockeras för publika adresser. Använd HTTPS (t.ex. via reverse proxy).</string>
+    <string name="error_invalid_url">Ange en giltig serveradress.</string>
+
+    <!-- Settings -->
+    <string name="settings_section_server">Server &amp; Synk</string>
+    <string name="settings_section_appearance">Utseende &amp; Språk</string>
+    <string name="settings_section_data">Dina data</string>
+    <string name="settings_section_about">Om Kluddra</string>
+    <string name="settings_server_address">Server</string>
+    <string name="settings_signed_in_as">Inloggad som %1$s</string>
+    <string name="settings_theme">Tema</string>
+    <string name="theme_light">Ljust</string>
+    <string name="theme_dark">Mörkt</string>
+    <string name="theme_system">System</string>
+    <string name="settings_dynamic_color">Dynamiska färger (Material You)</string>
+    <string name="settings_dynamic_color_desc">Använd bakgrundsbildens färger istället för Kluddras palett</string>
+    <string name="settings_language">Språk</string>
+    <string name="language_system">Systemstandard</string>
+    <string name="language_sv">Svenska</string>
+    <string name="language_en">English</string>
+    <string name="settings_trash_count">%1$d anteckningar i papperskorgen</string>
+    <string name="settings_export_json">Exportera backup (JSON)</string>
+    <string name="settings_export_json_desc">Alla anteckningar och inköpslistan i öppet JSON-format</string>
+    <string name="settings_export_markdown">Exportera läsbara anteckningar (Markdown ZIP)</string>
+    <string name="settings_export_markdown_desc">Varje anteckning som vanlig .md-fil samt shopping-list.md</string>
+    <string name="settings_export_success">Export sparad</string>
+    <string name="settings_export_failed">Exporten misslyckades</string>
+    <string name="settings_sign_out">Logga ut</string>
+    <string name="confirm_sign_out_title">Logga ut?</string>
+    <string name="confirm_sign_out_body">Lokala anteckningar på den här enheten rensas. Kontrollera att alla ändringar är synkade först.</string>
+    <string name="settings_app_version">Appversion %1$s</string>
+    <string name="settings_privacy_note">Ingen reklam, ingen spårning, inga externa molntjänster.</string>
+</resources>

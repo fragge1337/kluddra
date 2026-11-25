@@ -1,0 +1,6 @@
+# Exempel: Caddy reverse proxy med automatisk Let's Encrypt HTTPS
+notes.example.com {
+    reverse_proxy kluddra:8080 {
+        header_up X-Real-IP {remote_host}
+    }
+}
