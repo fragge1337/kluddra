@@ -54,6 +54,8 @@ func (s *Service) Pull(ctx context.Context, userID string, sinceSeq int64, limit
 
 	return model.SyncPullResponse{
 		InstanceID:    s.store.InstanceID,
+		ServerVersion: config.Version,
+		APIVersion:    config.APIVersion,
 		CurrentSeq:    currentSeq,
 		HasMore:       notesMore || itemsMore,
 		Notes:         notes,
@@ -101,7 +103,7 @@ func (s *Service) Push(ctx context.Context, userID string, req model.SyncPushReq
 // ListNotes returns all non-purged notes for standard CRUD or export.
 func (s *Service) ListNotes(ctx context.Context, userID string, includeTrashed bool) ([]model.Note, error) {
 	query := `
-		SELECT id, title, body, is_pinned, is_read_only, version, server_seq,
+		SELECT id, title, body, color, is_pinned, is_read_only, version, server_seq,
 		       conflict_of_note_id, created_at, updated_at, trashed_at, purged_at
 		FROM notes
 		WHERE user_id = ? AND purged_at IS NULL
@@ -123,7 +125,7 @@ func (s *Service) ListNotes(ctx context.Context, userID string, includeTrashed b
 func (s *Service) GetNote(ctx context.Context, userID, noteID string) (model.Note, error) {
 	var n model.Note
 	err := s.scanNoteRow(s.store.DB.QueryRowContext(ctx, `
-		SELECT id, title, body, is_pinned, is_read_only, version, server_seq,
+		SELECT id, title, body, color, is_pinned, is_read_only, version, server_seq,
 		       conflict_of_note_id, created_at, updated_at, trashed_at, purged_at
 		FROM notes
 		WHERE id = ? AND user_id = ? AND purged_at IS NULL
@@ -135,12 +137,13 @@ func (s *Service) GetNote(ctx context.Context, userID, noteID string) (model.Not
 }
 
 // CreateNote creates a note directly via CRUD API.
-func (s *Service) CreateNote(ctx context.Context, userID, noteID, title, body string, isPinned, isReadOnly bool) (model.Note, error) {
+func (s *Service) CreateNote(ctx context.Context, userID, noteID, title, body, color string, isPinned, isReadOnly bool) (model.Note, error) {
 	if noteID == "" {
 		noteID = id.NewUUIDv7()
 	} else if !id.IsValidUUID(noteID) {
 		return model.Note{}, fmt.Errorf("%w: invalid note id", ErrInvalidInput)
 	}
+	color = normalizeNoteColor(color)
 	if err := s.validateNoteContent(title, body); err != nil {
 		return model.Note{}, err
 	}
@@ -156,9 +159,9 @@ func (s *Service) CreateNote(ctx context.Context, userID, noteID, title, body st
 			return err
 		}
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO notes (id, user_id, title, body, is_pinned, is_read_only, version, server_seq, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
-		`, noteID, userID, title, body, boolToInt(isPinned), boolToInt(isReadOnly), seq, now, now)
+			INSERT INTO notes (id, user_id, title, body, color, is_pinned, is_read_only, version, server_seq, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+		`, noteID, userID, title, body, color, boolToInt(isPinned), boolToInt(isReadOnly), seq, now, now)
 		if err != nil {
 			return err
 		}
@@ -166,6 +169,7 @@ func (s *Service) CreateNote(ctx context.Context, userID, noteID, title, body st
 			ID:         noteID,
 			Title:      title,
 			Body:       body,
+			Color:      color,
 			IsPinned:   isPinned,
 			IsReadOnly: isReadOnly,
 			Version:    1,
@@ -179,7 +183,7 @@ func (s *Service) CreateNote(ctx context.Context, userID, noteID, title, body st
 }
 
 // UpdateNote updates a note via CRUD API, strictly enforcing read-only protection.
-func (s *Service) UpdateNote(ctx context.Context, userID, noteID string, title, body *string, isPinned *bool) (model.Note, error) {
+func (s *Service) UpdateNote(ctx context.Context, userID, noteID string, title, body, color *string, isPinned *bool) (model.Note, error) {
 	now := time.Now().UnixMilli()
 	var updated model.Note
 	err := s.store.WithWriteTx(ctx, func(tx *sql.Tx) error {
@@ -209,6 +213,10 @@ func (s *Service) UpdateNote(ctx context.Context, userID, noteID string, title, 
 			return err
 		}
 
+		newColor := cur.Color
+		if color != nil {
+			newColor = normalizeNoteColor(*color)
+		}
 		newPinned := cur.IsPinned
 		if isPinned != nil {
 			newPinned = *isPinned
@@ -226,15 +234,16 @@ func (s *Service) UpdateNote(ctx context.Context, userID, noteID string, title, 
 
 		_, err = tx.ExecContext(ctx, `
 			UPDATE notes
-			SET title = ?, body = ?, is_pinned = ?, version = ?, server_seq = ?, updated_at = ?
+			SET title = ?, body = ?, color = ?, is_pinned = ?, version = ?, server_seq = ?, updated_at = ?
 			WHERE id = ? AND user_id = ?
-		`, newTitle, newBody, boolToInt(newPinned), newVersion, seq, updatedAt, noteID, userID)
+		`, newTitle, newBody, newColor, boolToInt(newPinned), newVersion, seq, updatedAt, noteID, userID)
 		if err != nil {
 			return err
 		}
 		updated = cur
 		updated.Title = newTitle
 		updated.Body = newBody
+		updated.Color = newColor
 		updated.IsPinned = newPinned
 		updated.Version = newVersion
 		updated.ServerSeq = seq
@@ -415,6 +424,7 @@ func (s *Service) DeleteShoppingItem(ctx context.Context, userID, itemID string)
 type noteUpsertPayload struct {
 	Title      string `json:"title"`
 	Body       string `json:"body"`
+	Color      string `json:"color"`
 	IsPinned   bool   `json:"is_pinned"`
 	IsReadOnly bool   `json:"is_read_only"`
 	CreatedAt  int64  `json:"created_at"`
@@ -423,6 +433,10 @@ type noteUpsertPayload struct {
 
 type noteFlagPayload struct {
 	Value bool `json:"value"`
+}
+
+type noteColorPayload struct {
+	Color string `json:"color"`
 }
 
 type shoppingUpsertPayload struct {
@@ -524,15 +538,16 @@ func (s *Service) applyNoteMutationTx(ctx context.Context, tx *sql.Tx, userID, d
 			updatedAt = now
 		}
 
+		color := normalizeNoteColor(p.Color)
 		if !exists {
 			seq, err := nextUserSeqTx(ctx, tx, userID, now)
 			if err != nil {
 				return model.SyncMutationResult{}, err
 			}
 			_, err = tx.ExecContext(ctx, `
-				INSERT INTO notes (id, user_id, title, body, is_pinned, is_read_only, version, server_seq, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
-			`, mut.EntityID, userID, p.Title, p.Body, boolToInt(p.IsPinned), boolToInt(p.IsReadOnly), seq, createdAt, updatedAt)
+				INSERT INTO notes (id, user_id, title, body, color, is_pinned, is_read_only, version, server_seq, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+			`, mut.EntityID, userID, p.Title, p.Body, color, boolToInt(p.IsPinned), boolToInt(p.IsReadOnly), seq, createdAt, updatedAt)
 			if err != nil {
 				return model.SyncMutationResult{}, err
 			}
@@ -540,6 +555,7 @@ func (s *Service) applyNoteMutationTx(ctx context.Context, tx *sql.Tx, userID, d
 				ID:         mut.EntityID,
 				Title:      p.Title,
 				Body:       p.Body,
+				Color:      color,
 				IsPinned:   p.IsPinned,
 				IsReadOnly: p.IsReadOnly,
 				Version:    1,
@@ -614,16 +630,21 @@ func (s *Service) applyNoteMutationTx(ctx context.Context, tx *sql.Tx, userID, d
 			return model.SyncMutationResult{}, err
 		}
 		newVer := existing.Version + 1
+		finalColor := existing.Color
+		if color != "" {
+			finalColor = color
+		}
 		_, err = tx.ExecContext(ctx, `
 			UPDATE notes
-			SET title = ?, body = ?, is_pinned = ?, version = ?, server_seq = ?, updated_at = ?, trashed_at = NULL
+			SET title = ?, body = ?, color = ?, is_pinned = ?, version = ?, server_seq = ?, updated_at = ?, trashed_at = NULL
 			WHERE id = ? AND user_id = ?
-		`, p.Title, p.Body, boolToInt(p.IsPinned), newVer, seq, updatedAt, existing.ID, userID)
+		`, p.Title, p.Body, finalColor, boolToInt(p.IsPinned), newVer, seq, updatedAt, existing.ID, userID)
 		if err != nil {
 			return model.SyncMutationResult{}, err
 		}
 		existing.Title = p.Title
 		existing.Body = p.Body
+		existing.Color = finalColor
 		existing.IsPinned = p.IsPinned
 		existing.Version = newVer
 		existing.ServerSeq = seq
@@ -637,6 +658,31 @@ func (s *Service) applyNoteMutationTx(ctx context.Context, tx *sql.Tx, userID, d
 			Status:     "applied",
 			Note:       &existing,
 		}, nil
+
+	case "set_color":
+		if !exists || existing.PurgedAt != nil {
+			return rejectedResult(mut, "NOT_FOUND", "note not found"), nil
+		}
+		var p noteColorPayload
+		if err := json.Unmarshal(mut.Payload, &p); err != nil {
+			return rejectedResult(mut, "INVALID_PAYLOAD", "malformed color payload"), nil
+		}
+		col := normalizeNoteColor(p.Color)
+		seq, err := nextUserSeqTx(ctx, tx, userID, now)
+		if err != nil {
+			return model.SyncMutationResult{}, err
+		}
+		newVer := existing.Version + 1
+		_, err = tx.ExecContext(ctx, `
+			UPDATE notes SET color = ?, version = ?, server_seq = ? WHERE id = ? AND user_id = ?
+		`, col, newVer, seq, existing.ID, userID)
+		if err != nil {
+			return model.SyncMutationResult{}, err
+		}
+		existing.Color = col
+		existing.Version = newVer
+		existing.ServerSeq = seq
+		return model.SyncMutationResult{MutationID: mut.MutationID, Entity: "note", EntityID: existing.ID, Status: "applied", Note: &existing}, nil
 
 	case "set_pin":
 		if !exists || existing.PurgedAt != nil {
@@ -894,9 +940,9 @@ func (s *Service) createConflictCopyTx(ctx context.Context, tx *sql.Tx, userID s
 
 	refID := original.ID
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO notes (id, user_id, title, body, is_pinned, is_read_only, version, server_seq, conflict_of_note_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?)
-	`, copyID, userID, conflictTitle, body, seq, refID, now, now)
+		INSERT INTO notes (id, user_id, title, body, color, is_pinned, is_read_only, version, server_seq, conflict_of_note_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?)
+	`, copyID, userID, conflictTitle, body, original.Color, seq, refID, now, now)
 	if err != nil {
 		return model.Note{}, err
 	}
@@ -905,6 +951,7 @@ func (s *Service) createConflictCopyTx(ctx context.Context, tx *sql.Tx, userID s
 		ID:               copyID,
 		Title:            conflictTitle,
 		Body:             body,
+		Color:            original.Color,
 		IsPinned:         false,
 		IsReadOnly:       false,
 		Version:          1,
@@ -927,7 +974,7 @@ func (s *Service) validateNoteContent(title, body string) error {
 
 func (s *Service) queryNotesSince(ctx context.Context, userID string, sinceSeq int64, limit int) ([]model.Note, bool, error) {
 	rows, err := s.store.DB.QueryContext(ctx, `
-		SELECT id, title, body, is_pinned, is_read_only, version, server_seq,
+		SELECT id, title, body, color, is_pinned, is_read_only, version, server_seq,
 		       conflict_of_note_id, created_at, updated_at, trashed_at, purged_at
 		FROM notes
 		WHERE user_id = ? AND server_seq > ?
@@ -977,7 +1024,7 @@ func (s *Service) queryShoppingSince(ctx context.Context, userID string, sinceSe
 func (s *Service) loadNoteTx(ctx context.Context, tx *sql.Tx, userID, noteID string) (model.Note, error) {
 	var n model.Note
 	err := s.scanNoteRow(tx.QueryRowContext(ctx, `
-		SELECT id, title, body, is_pinned, is_read_only, version, server_seq,
+		SELECT id, title, body, color, is_pinned, is_read_only, version, server_seq,
 		       conflict_of_note_id, created_at, updated_at, trashed_at, purged_at
 		FROM notes WHERE id = ? AND user_id = ?
 	`, noteID, userID), &n)
@@ -1017,7 +1064,7 @@ func (s *Service) scanNoteRow(row *sql.Row, n *model.Note) error {
 	var conflictOf sql.NullString
 	var trashedAt, purgedAt sql.NullInt64
 	err := row.Scan(
-		&n.ID, &n.Title, &n.Body, &pinned, &readOnly, &n.Version, &n.ServerSeq,
+		&n.ID, &n.Title, &n.Body, &n.Color, &pinned, &readOnly, &n.Version, &n.ServerSeq,
 		&conflictOf, &n.CreatedAt, &n.UpdatedAt, &trashedAt, &purgedAt,
 	)
 	if err != nil {
@@ -1048,7 +1095,7 @@ func scanNotes(rows *sql.Rows) ([]model.Note, error) {
 		var conflictOf sql.NullString
 		var trashedAt, purgedAt sql.NullInt64
 		if err := rows.Scan(
-			&n.ID, &n.Title, &n.Body, &pinned, &readOnly, &n.Version, &n.ServerSeq,
+			&n.ID, &n.Title, &n.Body, &n.Color, &pinned, &readOnly, &n.Version, &n.ServerSeq,
 			&conflictOf, &n.CreatedAt, &n.UpdatedAt, &trashedAt, &purgedAt,
 		); err != nil {
 			return nil, err
@@ -1138,4 +1185,13 @@ func isValidSortOrder(s string) bool {
 		}
 	}
 	return true
+}
+
+func normalizeNoteColor(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "lavender", "pistachio", "salmon", "butter", "sky", "rose", "neutral":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return ""
+	}
 }

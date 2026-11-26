@@ -17,6 +17,7 @@ data class NoteEntity(
     val id: String,
     val title: String,
     val body: String,
+    val color: String = "",
     @ColumnInfo(name = "is_pinned")
     val isPinned: Boolean = false,
     @ColumnInfo(name = "is_read_only")
@@ -107,5 +108,9 @@ data class SyncMetadataEntity(
     @ColumnInfo(name = "last_sync_at")
     val lastSyncAt: Long? = null,
     @ColumnInfo(name = "server_instance_id")
-    val serverInstanceId: String? = null
+    val serverInstanceId: String? = null,
+    @ColumnInfo(name = "server_version")
+    val serverVersion: String? = null,
+    @ColumnInfo(name = "server_api_version")
+    val serverApiVersion: String? = null
 )

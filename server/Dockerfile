@@ -14,7 +14,8 @@ ARG VERSION=1.0.0
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath \
     -ldflags="-s -w -X github.com/fragge1337/kluddra/server/internal/config.Version=${VERSION}" \
-    -o /out/kluddra ./cmd/kluddra
+    -o /out/kluddra ./cmd/kluddra && \
+    mkdir -p /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot
 LABEL org.opencontainers.image.title="Kluddra Server"
@@ -22,6 +23,7 @@ LABEL org.opencontainers.image.description="Self-hosted notes, beautifully simpl
 LABEL org.opencontainers.image.source="https://github.com/fragge1337/kluddra"
 
 COPY --from=builder /out/kluddra /kluddra
+COPY --from=builder --chown=65532:65532 /out/data /data
 
 ENV KLUDDRA_PORT=8080 \
     KLUDDRA_DATA_DIR=/data

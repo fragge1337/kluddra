@@ -7,6 +7,7 @@ import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -89,6 +90,11 @@ class KluddraApiClient(
         return parseOrThrow(resp)
     }
 
+    suspend fun fetchCurrentServerInfo(): ServerInfoDto? {
+        val creds = preferences.getCredentials() ?: return null
+        return runCatching { fetchServerInfo(creds.serverUrl, creds.allowLocalHttp) }.getOrNull()
+    }
+
     suspend fun completeSetup(
         baseUrl: String,
         allowLocalHttp: Boolean,
@@ -152,6 +158,28 @@ class KluddraApiClient(
             }
         }
 
+    suspend fun listSessions(): List<SessionInfoDto> =
+        authorizedRequest<SessionsResponseDto> { baseUrl, token ->
+            client.get("$baseUrl/api/v1/auth/sessions") {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }.sessions
+
+    suspend fun revokeSession(sessionId: String) {
+        authorizedEmptyRequest { baseUrl, token ->
+            client.delete("$baseUrl/api/v1/auth/sessions/$sessionId") {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }
+    }
+
+    suspend fun revokeOtherSessions(): Int =
+        authorizedRequest<RevokeOthersResponseDto> { baseUrl, token ->
+            client.post("$baseUrl/api/v1/auth/sessions/revoke-others") {
+                header(HttpHeaders.Authorization, "Bearer $token")
+            }
+        }.revokedCount
+
     private suspend inline fun <reified T> authorizedRequest(
         crossinline block: suspend (baseUrl: String, accessToken: String) -> HttpResponse
     ): T {
@@ -167,6 +195,31 @@ class KluddraApiClient(
             }
         }
         return parseOrThrow(response)
+    }
+
+    private suspend fun authorizedEmptyRequest(
+        block: suspend (baseUrl: String, accessToken: String) -> HttpResponse
+    ) {
+        val creds = preferences.getCredentials() ?: throw AuthExpiredException()
+        val baseUrl = requireAllowedUrl(creds.serverUrl, creds.allowLocalHttp)
+
+        var response = block(baseUrl, creds.accessToken)
+        if (response.status == HttpStatusCode.Unauthorized) {
+            val newAccess = refreshAccessToken(baseUrl)
+            response = block(baseUrl, newAccess)
+            if (response.status == HttpStatusCode.Unauthorized) {
+                throw AuthExpiredException()
+            }
+        }
+        if (response.status.value !in 200..299) {
+            val text = runCatching { response.bodyAsText() }.getOrDefault("")
+            val parsed = runCatching { json.decodeFromString<ApiErrorDto>(text) }.getOrNull()
+            throw ApiException(
+                statusCode = response.status.value,
+                code = parsed?.code ?: "HTTP_${response.status.value}",
+                message = parsed?.message ?: response.status.description
+            )
+        }
     }
 
     private suspend fun refreshAccessToken(baseUrl: String): String = refreshMutex.withLock {

@@ -155,3 +155,148 @@ func TestSecurityHardeningJWTAlgNoneContentTypeHeadersAndCrossUserMutations(t *t
 		t.Fatalf("alice idempotency was corrupted by bob: %+v err=%v", resARetry, err)
 	}
 }
+
+func TestPersistentLoginLockoutSurvivesRestartAndRevokeOtherSessions(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	cfg := config.Config{
+		DataDir:           dir,
+		AccessTokenTTL:    15 * time.Minute,
+		RefreshTokenTTL:   24 * time.Hour,
+		Argon2MemoryKB:    32768,
+		Argon2Time:        2,
+		Argon2Parallelism: 1,
+		MaxSyncBodyBytes:  1 << 20,
+		MaxNoteBodyBytes:  256 << 10,
+		MaxNoteTitleLen:   300,
+		MaxItemTextLen:    300,
+		TrustedProxies:    []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")},
+	}
+
+	store, err := db.Open(ctx, dir, nil)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer store.CheckpointAndClose()
+
+	authSvc, err := auth.NewService(ctx, store, cfg)
+	if err != nil {
+		t.Fatalf("auth init: %v", err)
+	}
+	if _, err := authSvc.CreateUser(ctx, "alice", "StrongPass123!", true); err != nil {
+		t.Fatalf("create alice: %v", err)
+	}
+	if _, err := authSvc.CreateUser(ctx, "bob", "StrongPass456!", false); err != nil {
+		t.Fatalf("create bob: %v", err)
+	}
+
+	syncSvc := kluddrasync.NewService(store, cfg)
+	srv := api.NewServer(cfg, store, authSvc, syncSvc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ts := httptest.NewServer(srv.Handler())
+
+	// 1. Trigger 5 failed logins from a specific client IP -> 6th must return 429 ACCOUNT_LOCKED
+	for i := 1; i <= 5; i++ {
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/auth/login", bytes.NewReader([]byte(`{"username":"alice","password":"WrongPassword!","device_name":"Bot"}`)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", "198.51.100.42")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("attempt %d: %v", i, err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: expected 401, got %d", i, resp.StatusCode)
+		}
+	}
+
+	// 6th attempt from a DIFFERENT IP (distributed attack!) targeting alice must STILL be locked!
+	reqLocked, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/auth/login", bytes.NewReader([]byte(`{"username":"alice","password":"StrongPass123!","device_name":"Bot2"}`)))
+	reqLocked.Header.Set("Content-Type", "application/json")
+	reqLocked.Header.Set("X-Forwarded-For", "198.51.100.99")
+	respLocked, err := http.DefaultClient.Do(reqLocked)
+	if err != nil {
+		t.Fatalf("locked check: %v", err)
+	}
+	var errBody struct {
+		Code string `json:"code"`
+	}
+	_ = json.NewDecoder(respLocked.Body).Decode(&errBody)
+	_ = respLocked.Body.Close()
+	if respLocked.StatusCode != http.StatusTooManyRequests || errBody.Code != "ACCOUNT_LOCKED" || respLocked.Header.Get("Retry-After") == "" {
+		t.Fatalf("expected 429 ACCOUNT_LOCKED with Retry-After, got %d code=%q retry=%q", respLocked.StatusCode, errBody.Code, respLocked.Header.Get("Retry-After"))
+	}
+	ts.Close()
+
+	// 2. Simulate full server/container restart (fresh authSvc + api.Server on the same SQLite DB)
+	authSvc2, err := auth.NewService(ctx, store, cfg)
+	if err != nil {
+		t.Fatalf("auth re-init: %v", err)
+	}
+	srv2 := api.NewServer(cfg, store, authSvc2, kluddrasync.NewService(store, cfg), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ts2 := httptest.NewServer(srv2.Handler())
+	defer ts2.Close()
+
+	reqAfterRestart, _ := http.NewRequest(http.MethodPost, ts2.URL+"/api/v1/auth/login", bytes.NewReader([]byte(`{"username":"alice","password":"StrongPass123!","device_name":"Bot3"}`)))
+	reqAfterRestart.Header.Set("Content-Type", "application/json")
+	reqAfterRestart.Header.Set("X-Forwarded-For", "203.0.113.10")
+	respRestart, err := http.DefaultClient.Do(reqAfterRestart)
+	if err != nil {
+		t.Fatalf("post-restart check: %v", err)
+	}
+	_ = respRestart.Body.Close()
+	if respRestart.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected lockout to persist across server restart (429), got %d", respRestart.StatusCode)
+	}
+
+	// 3. Test POST /api/v1/auth/sessions/revoke-others (isolate per user & keep current session)
+	authSvc2.ClearLoginFailures(ctx, "198.51.100.42", "alice")
+	s1, err := authSvc2.Login(ctx, "alice", "StrongPass123!", "Phone 1")
+	if err != nil {
+		t.Fatalf("alice login 1: %v", err)
+	}
+	s2, err := authSvc2.Login(ctx, "alice", "StrongPass123!", "Tablet")
+	if err != nil {
+		t.Fatalf("alice login 2: %v", err)
+	}
+	s3, err := authSvc2.Login(ctx, "alice", "StrongPass123!", "Lost Phone")
+	if err != nil {
+		t.Fatalf("alice login 3: %v", err)
+	}
+	bobSession, err := authSvc2.Login(ctx, "bob", "StrongPass456!", "Bob Phone")
+	if err != nil {
+		t.Fatalf("bob login: %v", err)
+	}
+
+	revokeReq, _ := http.NewRequest(http.MethodPost, ts2.URL+"/api/v1/auth/sessions/revoke-others", nil)
+	revokeReq.Header.Set("Authorization", "Bearer "+s1.AccessToken)
+	revokeResp, err := http.DefaultClient.Do(revokeReq)
+	if err != nil {
+		t.Fatalf("revoke-others: %v", err)
+	}
+	var revokeBody struct {
+		RevokedCount int64 `json:"revoked_count"`
+	}
+	_ = json.NewDecoder(revokeResp.Body).Decode(&revokeBody)
+	_ = revokeResp.Body.Close()
+	if revokeResp.StatusCode != http.StatusOK || revokeBody.RevokedCount != 2 {
+		t.Fatalf("expected 200 with revoked_count=2, got %d count=%d", revokeResp.StatusCode, revokeBody.RevokedCount)
+	}
+
+	// Current session s1 still valid; s2 & s3 rejected (401); Bob's session untouched (200)
+	checkAuth := func(token string, expectedStatus int, label string) {
+		r, _ := http.NewRequest(http.MethodGet, ts2.URL+"/api/v1/auth/sessions", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		res, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatalf("%s: %v", label, err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode != expectedStatus {
+			t.Fatalf("%s: expected %d, got %d", label, expectedStatus, res.StatusCode)
+		}
+	}
+	checkAuth(s1.AccessToken, http.StatusOK, "alice current s1")
+	checkAuth(s2.AccessToken, http.StatusUnauthorized, "alice revoked s2")
+	checkAuth(s3.AccessToken, http.StatusUnauthorized, "alice revoked s3")
+	checkAuth(bobSession.AccessToken, http.StatusOK, "bob untouched session")
+}

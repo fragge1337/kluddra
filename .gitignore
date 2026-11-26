@@ -18,6 +18,7 @@ coverage.out
 
 # Android / Gradle
 android/.gradle/
+android/.kotlin/
 android/local.properties
 android/**/build/
 android/captures/

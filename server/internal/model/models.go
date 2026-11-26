@@ -45,6 +45,7 @@ type Note struct {
 	ID               string  `json:"id"`
 	Title            string  `json:"title"`
 	Body             string  `json:"body"`
+	Color            string  `json:"color"`
 	IsPinned         bool    `json:"is_pinned"`
 	IsReadOnly       bool    `json:"is_read_only"`
 	Version          int64   `json:"version"`
@@ -70,6 +71,8 @@ type ShoppingItem struct {
 
 type SyncPullResponse struct {
 	InstanceID    string         `json:"instance_id"`
+	ServerVersion string         `json:"server_version,omitempty"`
+	APIVersion    string         `json:"api_version,omitempty"`
 	CurrentSeq    int64          `json:"current_seq"`
 	HasMore       bool           `json:"has_more"`
 	Notes         []Note         `json:"notes"`

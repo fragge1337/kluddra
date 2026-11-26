@@ -5,6 +5,7 @@ import app.kluddra.android.data.local.KluddraDatabase
 import app.kluddra.android.data.prefs.KluddraPreferences
 import app.kluddra.android.data.remote.KluddraApiClient
 import app.kluddra.android.data.remote.ServerInfoDto
+import app.kluddra.android.data.remote.SessionInfoDto
 import app.kluddra.android.sync.SyncEngine
 import app.kluddra.android.sync.SyncScheduler
 
@@ -56,6 +57,12 @@ class AuthRepository(
         syncScheduler.ensurePeriodicSyncScheduled()
         syncEngine.syncNow()
     }
+
+    suspend fun listSessions(): List<SessionInfoDto> = api.listSessions()
+
+    suspend fun revokeSession(sessionId: String) = api.revokeSession(sessionId)
+
+    suspend fun revokeOtherSessions(): Int = api.revokeOtherSessions()
 
     suspend fun signOut() {
         api.logout()

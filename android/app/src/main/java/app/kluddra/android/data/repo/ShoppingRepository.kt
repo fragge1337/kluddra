@@ -108,6 +108,9 @@ class ShoppingRepository(
         val now = System.currentTimeMillis()
         db.withTransaction {
             for (item in items) {
+                // Cancel any unsent delete mutation for this item so it cannot race with restoration;
+                // if delete was already pushed, the new upsert revives the item on the server (deleted_at = NULL).
+                syncDao.deleteSuperseded("shopping_item", item.id, "delete")
                 val restored = item.copy(deletedAt = null, updatedAt = now, isDirty = true)
                 shoppingDao.upsert(restored)
                 enqueueUpsertTx(restored, now)

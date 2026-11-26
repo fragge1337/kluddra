@@ -66,6 +66,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/refresh", s.handleRefresh)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.requireAuth(s.handleLogout))
 	mux.HandleFunc("GET /api/v1/auth/sessions", s.requireAuth(s.handleListSessions))
+	mux.HandleFunc("POST /api/v1/auth/sessions/revoke-others", s.requireAuth(s.handleRevokeOtherSessions))
 	mux.HandleFunc("DELETE /api/v1/auth/sessions/{id}", s.requireAuth(s.handleRevokeSession))
 
 	// Offline-first Sync API
@@ -133,14 +134,17 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	clientIP := ClientIP(r, s.cfg.TrustedProxies)
 	resp, err := s.authSvc.CompleteSetup(r.Context(), req.SetupCode, req.Username, req.Password, req.DeviceName)
 	if err != nil {
 		switch {
 		case errors.Is(err, auth.ErrSetupNotAllowed):
 			writeError(w, http.StatusForbidden, "SETUP_DISABLED", "initial setup has already been completed")
 		case errors.Is(err, auth.ErrSetupLocked):
+			s.logger.Warn("security_event", "event", "setup_locked", "client_ip", clientIP)
 			writeError(w, http.StatusTooManyRequests, "SETUP_LOCKED", "initial setup locked after too many failed attempts")
 		case errors.Is(err, auth.ErrInvalidSetupCode):
+			s.logger.Warn("security_event", "event", "setup_failed", "client_ip", clientIP)
 			writeError(w, http.StatusUnauthorized, "INVALID_SETUP_CODE", "invalid setup code")
 		case errors.Is(err, auth.ErrValidation):
 			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
@@ -149,12 +153,16 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	s.logger.Info("security_event", "event", "setup_completed", "client_ip", clientIP, "username", resp.User.Username)
 	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	clientIP := ClientIP(r, s.cfg.TrustedProxies)
+
 	// Per-IP rate limit BEFORE parsing JSON or burning Argon2id CPU/RAM.
 	if !s.allowAuthIPRate(r, "login") {
+		s.logger.Warn("security_event", "event", "login_rate_limited", "scope", "ip", "client_ip", clientIP)
 		w.Header().Set("Retry-After", "60")
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many login attempts, try again later")
 		return
@@ -173,24 +181,49 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Secondary per-username limiter blocks distributed credential stuffing across many IPs.
 	normUser := strings.ToLower(strings.TrimSpace(req.Username))
 	if normUser != "" && !s.authUserLimiter.Allow("user:"+normUser) {
+		s.logger.Warn("security_event", "event", "login_rate_limited", "scope", "user", "client_ip", clientIP, "username", normUser)
 		w.Header().Set("Retry-After", "60")
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many login attempts for this account, try again later")
 		return
 	}
 
+	// Persistent progressive lockout check (survives container restarts) BEFORE Argon2id.
+	if err := s.authSvc.CheckLoginLockout(r.Context(), clientIP, normUser); err != nil {
+		var lockErr *auth.LockoutError
+		if errors.As(err, &lockErr) {
+			retrySec := max(1, int(lockErr.RetryAfter.Seconds()))
+			s.logger.Warn("security_event", "event", "login_locked", "client_ip", clientIP, "username", normUser, "retry_after_sec", retrySec)
+			w.Header().Set("Retry-After", strconv.Itoa(retrySec))
+			writeError(w, http.StatusTooManyRequests, "ACCOUNT_LOCKED", lockErr.Error())
+			return
+		}
+	}
+
 	resp, err := s.authSvc.Login(r.Context(), req.Username, req.Password, req.DeviceName)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
+			fails, lockDur := s.authSvc.RecordLoginFailure(r.Context(), clientIP, normUser)
+			s.logger.Warn(
+				"security_event",
+				"event", "login_failed",
+				"client_ip", clientIP,
+				"username", normUser,
+				"failed_count", fails,
+				"lockout_sec", int(lockDur.Seconds()),
+			)
 			writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "invalid username or password")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "LOGIN_FAILED", "login failed")
 		return
 	}
+	s.authSvc.ClearLoginFailures(r.Context(), clientIP, normUser)
+	s.logger.Info("security_event", "event", "login_success", "client_ip", clientIP, "username", resp.User.Username, "session_id", resp.SessionID)
 	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	clientIP := ClientIP(r, s.cfg.TrustedProxies)
 	if !s.allowAuthIPRate(r, "refresh") {
 		w.Header().Set("Retry-After", "60")
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many token refresh attempts")
@@ -209,6 +242,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.authSvc.Refresh(r.Context(), req.RefreshToken, req.DeviceName)
 	if err != nil {
 		if errors.Is(err, auth.ErrTokenReused) {
+			s.logger.Warn("security_event", "event", "token_reuse_detected", "client_ip", clientIP)
 			writeError(w, http.StatusUnauthorized, "TOKEN_REUSED", "session revoked due to token reuse")
 			return
 		}
@@ -237,8 +271,27 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
 }
 
+func (s *Server) handleRevokeOtherSessions(w http.ResponseWriter, r *http.Request) {
+	claims := getClaims(r.Context())
+	clientIP := ClientIP(r, s.cfg.TrustedProxies)
+	revoked, err := s.authSvc.RevokeOtherSessions(r.Context(), claims.Sub, claims.SessionID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to revoke other sessions")
+		return
+	}
+	s.logger.Warn(
+		"security_event",
+		"event", "other_sessions_revoked",
+		"client_ip", clientIP,
+		"username", claims.Username,
+		"revoked_count", revoked,
+	)
+	writeJSON(w, http.StatusOK, map[string]any{"revoked_count": revoked})
+}
+
 func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 	claims := getClaims(r.Context())
+	clientIP := ClientIP(r, s.cfg.TrustedProxies)
 	targetID := r.PathValue("id")
 	if !id.IsValidUUID(targetID) {
 		writeError(w, http.StatusBadRequest, "INVALID_ID", "invalid session id")
@@ -248,6 +301,13 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to revoke session")
 		return
 	}
+	s.logger.Warn(
+		"security_event",
+		"event", "session_revoked",
+		"client_ip", clientIP,
+		"username", claims.Username,
+		"target_session_id", targetID,
+	)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -303,6 +363,7 @@ func (s *Server) handleCreateNote(w http.ResponseWriter, r *http.Request) {
 		ID         string `json:"id"`
 		Title      string `json:"title"`
 		Body       string `json:"body"`
+		Color      string `json:"color"`
 		IsPinned   bool   `json:"is_pinned"`
 		IsReadOnly bool   `json:"is_read_only"`
 	}
@@ -310,7 +371,7 @@ func (s *Server) handleCreateNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
 		return
 	}
-	note, err := s.syncSvc.CreateNote(r.Context(), claims.Sub, req.ID, req.Title, req.Body, req.IsPinned, req.IsReadOnly)
+	note, err := s.syncSvc.CreateNote(r.Context(), claims.Sub, req.ID, req.Title, req.Body, req.Color, req.IsPinned, req.IsReadOnly)
 	if err != nil {
 		if errors.Is(err, kluddrasync.ErrInvalidInput) {
 			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
@@ -341,13 +402,14 @@ func (s *Server) handleUpdateNote(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title    *string `json:"title"`
 		Body     *string `json:"body"`
+		Color    *string `json:"color"`
 		IsPinned *bool   `json:"is_pinned"`
 	}
 	if err := decodeJSON(w, r, int64(s.cfg.MaxNoteBodyBytes+4096), &req); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_JSON", err.Error())
 		return
 	}
-	note, err := s.syncSvc.UpdateNote(r.Context(), claims.Sub, r.PathValue("id"), req.Title, req.Body, req.IsPinned)
+	note, err := s.syncSvc.UpdateNote(r.Context(), claims.Sub, r.PathValue("id"), req.Title, req.Body, req.Color, req.IsPinned)
 	if err != nil {
 		switch {
 		case errors.Is(err, kluddrasync.ErrNotFound):

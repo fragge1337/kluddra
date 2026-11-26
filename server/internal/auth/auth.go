@@ -34,10 +34,13 @@ const (
 	maxArgon2MemoryKB     = 262144 // 256 MiB upper safety bound
 	maxArgon2Iterations   = 10
 	maxArgon2Parallelism  = 8
+	lockoutResetWindow    = 24 * time.Hour
+	maxLockoutRows        = 10_000
 )
 
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrAccountLocked      = errors.New("too many failed login attempts")
 	ErrInvalidToken       = errors.New("invalid or expired token")
 	ErrTokenReused        = errors.New("refresh token reuse detected")
 	ErrSetupNotAllowed    = errors.New("initial setup already completed")
@@ -46,6 +49,19 @@ var (
 	ErrUsernameTaken      = errors.New("username already exists")
 	ErrValidation         = errors.New("validation error")
 )
+
+// LockoutError carries the remaining backoff duration when a username or IP is locked.
+type LockoutError struct {
+	RetryAfter time.Duration
+}
+
+func (e *LockoutError) Error() string {
+	return fmt.Sprintf("too many failed login attempts, retry in %ds", max(1, int(e.RetryAfter.Seconds())))
+}
+
+func (e *LockoutError) Unwrap() error {
+	return ErrAccountLocked
+}
 
 type jwtHeader struct {
 	Alg string `json:"alg"`
@@ -395,6 +411,183 @@ func (s *Service) Logout(ctx context.Context, userID, sessionID string) error {
 		`, now, sessionID, userID)
 		return err
 	})
+}
+
+// RevokeOtherSessions revokes all active sessions for userID except currentSessionID.
+func (s *Service) RevokeOtherSessions(ctx context.Context, userID, currentSessionID string) (int64, error) {
+	now := time.Now().UnixMilli()
+	var revoked int64
+	err := s.store.WithWriteTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE sessions
+			SET revoked_at = ?
+			WHERE user_id = ? AND id != ? AND revoked_at IS NULL
+		`, now, userID, currentSessionID)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		revoked = n
+		return nil
+	})
+	return revoked, err
+}
+
+// CheckLoginLockout verifies neither the target username nor client IP is currently under
+// persistent progressive backoff. Runs BEFORE Argon2id so locked requests cost zero CPU/RAM.
+func (s *Service) CheckLoginLockout(ctx context.Context, clientIP, username string) error {
+	nowMs := time.Now().UnixMilli()
+	normUser := strings.ToLower(strings.TrimSpace(username))
+	normIP := strings.TrimSpace(clientIP)
+
+	var maxLockedUntil int64
+	checkScope := func(scope, key string) error {
+		if key == "" {
+			return nil
+		}
+		var lockedUntil int64
+		err := s.store.DB.QueryRowContext(ctx, `
+			SELECT locked_until FROM login_lockouts WHERE scope = ? AND key = ?
+		`, scope, key).Scan(&lockedUntil)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if lockedUntil > maxLockedUntil {
+			maxLockedUntil = lockedUntil
+		}
+		return nil
+	}
+
+	if err := checkScope("user", normUser); err != nil {
+		return err
+	}
+	if err := checkScope("ip", normIP); err != nil {
+		return err
+	}
+
+	if maxLockedUntil > nowMs {
+		rem := time.Duration(maxLockedUntil-nowMs) * time.Millisecond
+		if rem < time.Second {
+			rem = time.Second
+		}
+		return &LockoutError{RetryAfter: rem}
+	}
+	return nil
+}
+
+// RecordLoginFailure increments persistent failure counters for both username and client IP
+// and applies exponential backoff (5->30s, 8->5m, 11->30m, 15+->60m). Recorded identically
+// for existing and non-existing usernames so attackers cannot enumerate valid accounts.
+func (s *Service) RecordLoginFailure(ctx context.Context, clientIP, username string) (int, time.Duration) {
+	now := time.Now()
+	nowMs := now.UnixMilli()
+	cutoffMs := now.Add(-lockoutResetWindow).UnixMilli()
+	normUser := strings.ToLower(strings.TrimSpace(username))
+	normIP := strings.TrimSpace(clientIP)
+
+	var (
+		maxFailed int
+		maxLock   time.Duration
+	)
+
+	_ = s.store.WithWriteTx(ctx, func(tx *sql.Tx) error {
+		// Prune expired lockout rows and enforce hard row ceiling against disk-fill spraying.
+		_, _ = tx.ExecContext(ctx, `DELETE FROM login_lockouts WHERE last_failed_at < ?`, cutoffMs)
+		var totalRows int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM login_lockouts`).Scan(&totalRows); err == nil && totalRows >= maxLockoutRows {
+			_, _ = tx.ExecContext(ctx, `
+				DELETE FROM login_lockouts
+				WHERE rowid IN (
+					SELECT rowid FROM login_lockouts ORDER BY last_failed_at ASC LIMIT 500
+				)
+			`)
+		}
+
+		bump := func(scope, key string) error {
+			if key == "" {
+				return nil
+			}
+			var failedCount int
+			var lastFailedAt int64
+			err := tx.QueryRowContext(ctx, `
+				SELECT failed_count, last_failed_at FROM login_lockouts WHERE scope = ? AND key = ?
+			`, scope, key).Scan(&failedCount, &lastFailedAt)
+			if errors.Is(err, sql.ErrNoRows) || lastFailedAt < cutoffMs {
+				failedCount = 0
+			} else if err != nil {
+				return err
+			}
+
+			failedCount++
+			lockDur := lockoutDurationForFailures(failedCount)
+			lockedUntil := int64(0)
+			if lockDur > 0 {
+				lockedUntil = now.Add(lockDur).UnixMilli()
+			}
+
+			_, err = tx.ExecContext(ctx, `
+				INSERT INTO login_lockouts (scope, key, failed_count, locked_until, last_failed_at)
+				VALUES (?, ?, ?, ?, ?)
+				ON CONFLICT(scope, key) DO UPDATE SET
+					failed_count = excluded.failed_count,
+					locked_until = excluded.locked_until,
+					last_failed_at = excluded.last_failed_at
+			`, scope, key, failedCount, lockedUntil, nowMs)
+			if err != nil {
+				return err
+			}
+			if failedCount > maxFailed {
+				maxFailed = failedCount
+			}
+			if lockDur > maxLock {
+				maxLock = lockDur
+			}
+			return nil
+		}
+
+		if err := bump("user", normUser); err != nil {
+			return err
+		}
+		return bump("ip", normIP)
+	})
+
+	return maxFailed, maxLock
+}
+
+// ClearLoginFailures resets failure counters for both username and IP after a valid login.
+func (s *Service) ClearLoginFailures(ctx context.Context, clientIP, username string) {
+	normUser := strings.ToLower(strings.TrimSpace(username))
+	normIP := strings.TrimSpace(clientIP)
+	_ = s.store.WithWriteTx(ctx, func(tx *sql.Tx) error {
+		if normUser != "" {
+			_, _ = tx.ExecContext(ctx, `DELETE FROM login_lockouts WHERE scope = 'user' AND key = ?`, normUser)
+		}
+		if normIP != "" {
+			_, _ = tx.ExecContext(ctx, `DELETE FROM login_lockouts WHERE scope = 'ip' AND key = ?`, normIP)
+		}
+		return nil
+	})
+}
+
+func lockoutDurationForFailures(failedCount int) time.Duration {
+	switch {
+	case failedCount >= 15:
+		return 60 * time.Minute
+	case failedCount >= 11:
+		return 30 * time.Minute
+	case failedCount >= 8:
+		return 5 * time.Minute
+	case failedCount >= 5:
+		return 30 * time.Second
+	default:
+		return 0
+	}
 }
 
 // ListSessions returns active non-revoked sessions for the user.

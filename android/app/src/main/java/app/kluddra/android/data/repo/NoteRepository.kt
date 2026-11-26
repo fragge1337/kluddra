@@ -4,11 +4,14 @@ import androidx.room.withTransaction
 import app.kluddra.android.data.local.KluddraDatabase
 import app.kluddra.android.data.local.NoteEntity
 import app.kluddra.android.data.local.PendingMutationEntity
+import app.kluddra.android.data.remote.ColorPayloadDto
 import app.kluddra.android.data.remote.FlagPayloadDto
 import app.kluddra.android.data.remote.NoteUpsertPayloadDto
 import app.kluddra.android.data.util.UuidV7
 import app.kluddra.android.sync.SyncScheduler
+import app.kluddra.android.ui.theme.NoteColor
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 
 class NoteRepository(
@@ -41,6 +44,19 @@ class NoteRepository(
 
     suspend fun getNote(id: String): NoteEntity? = noteDao.getNoteById(id)
 
+    suspend fun pickSmartNewNoteColor(): String {
+        val active = noteDao.observeActiveNotes().first()
+        val unpinnedColors = active
+            .filter { !it.isPinned }
+            .map { NoteColor.resolveForNote(it.color, it.id).key }
+        val neighbors = if (unpinnedColors.isNotEmpty()) {
+            unpinnedColors
+        } else {
+            active.map { NoteColor.resolveForNote(it.color, it.id).key }
+        }
+        return NoteColor.pickAvoidingNeighbors(neighbors).key
+    }
+
     /**
      * Saves note locally and enqueues an idempotent sync mutation.
      * - Never persists an empty brand-new note.
@@ -50,6 +66,7 @@ class NoteRepository(
         id: String,
         title: String,
         body: String,
+        color: String = "",
         isPinned: Boolean = false
     ): NoteEntity? {
         val existing = noteDao.getNoteById(id)
@@ -61,7 +78,13 @@ class NoteRepository(
         if (isEmpty && existing == null) {
             return null
         }
-        if (existing != null && existing.title == title && existing.body == body && existing.isPinned == isPinned) {
+        val resolvedColor = color.ifBlank { existing?.color.orEmpty() }
+        if (existing != null &&
+            existing.title == title &&
+            existing.body == body &&
+            existing.color == resolvedColor &&
+            existing.isPinned == isPinned
+        ) {
             return existing
         }
 
@@ -70,6 +93,7 @@ class NoteRepository(
             id = id,
             title = title,
             body = body,
+            color = resolvedColor,
             isPinned = existing?.isPinned ?: isPinned,
             isReadOnly = existing?.isReadOnly ?: false,
             version = existing?.version ?: 0L,
@@ -86,6 +110,7 @@ class NoteRepository(
             NoteUpsertPayloadDto(
                 title = updated.title,
                 body = updated.body,
+                color = updated.color,
                 isPinned = updated.isPinned,
                 isReadOnly = updated.isReadOnly,
                 createdAt = updated.createdAt,
@@ -110,6 +135,31 @@ class NoteRepository(
         }
         syncScheduler.enqueueImmediateSync(delayMs = 1_200L)
         return updated
+    }
+
+    suspend fun setColor(id: String, color: String) {
+        val existing = noteDao.getNoteById(id) ?: return
+        if (existing.color == color) return
+        val now = System.currentTimeMillis()
+        val updated = existing.copy(color = color, isDirty = true)
+        val payload = json.encodeToString(ColorPayloadDto(color))
+
+        db.withTransaction {
+            noteDao.upsert(updated)
+            syncDao.deleteSuperseded("note", id, "set_color")
+            syncDao.enqueue(
+                PendingMutationEntity(
+                    mutationId = UuidV7.generate(),
+                    entityType = "note",
+                    op = "set_color",
+                    entityId = id,
+                    baseVersion = existing.version,
+                    payloadJson = payload,
+                    createdAt = now
+                )
+            )
+        }
+        syncScheduler.enqueueImmediateSync(delayMs = 400L)
     }
 
     suspend fun setPinned(id: String, pinned: Boolean) {

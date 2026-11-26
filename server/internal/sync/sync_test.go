@@ -122,14 +122,14 @@ func TestReadOnlyProtectionEnforcedOnAPIAndOfflineSync(t *testing.T) {
 	ctx := context.Background()
 	_, svc, user := setupSyncEnv(t)
 
-	note, err := svc.CreateNote(ctx, user.ID, "", "Wi-Fi", "Lösenord: 1234", true, true)
+	note, err := svc.CreateNote(ctx, user.ID, "", "Wi-Fi", "Lösenord: 1234", "pistachio", true, true)
 	if err != nil {
 		t.Fatalf("create locked note: %v", err)
 	}
 
 	// Direct CRUD edit must be blocked with ErrNoteReadOnly.
 	newBody := "hacked"
-	if _, err := svc.UpdateNote(ctx, user.ID, note.ID, nil, &newBody, nil); !errors.Is(err, kluddrasync.ErrNoteReadOnly) {
+	if _, err := svc.UpdateNote(ctx, user.ID, note.ID, nil, &newBody, nil, nil); !errors.Is(err, kluddrasync.ErrNoteReadOnly) {
 		t.Fatalf("expected ErrNoteReadOnly, got %v", err)
 	}
 
@@ -159,7 +159,7 @@ func TestEditWinsOverTrashAndIdempotentRetry(t *testing.T) {
 	ctx := context.Background()
 	_, svc, user := setupSyncEnv(t)
 
-	note, err := svc.CreateNote(ctx, user.ID, "", "Idé", "Start", false, false)
+	note, err := svc.CreateNote(ctx, user.ID, "", "Idé", "Start", "lavender", false, false)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}

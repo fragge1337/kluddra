@@ -123,6 +123,12 @@ interface SyncDao {
     @Query("DELETE FROM pending_mutations WHERE entity_type = :entityType AND entity_id = :entityId AND op = :op")
     suspend fun deleteSuperseded(entityType: String, entityId: String, op: String)
 
+    @Query("DELETE FROM pending_mutations WHERE entity_type = :entityType AND entity_id = :entityId")
+    suspend fun deletePendingForEntity(entityType: String, entityId: String)
+
+    @Query("SELECT DISTINCT entity_id FROM pending_mutations WHERE entity_type = :entityType")
+    suspend fun getPendingEntityIds(entityType: String): List<String>
+
     @Query("UPDATE pending_mutations SET retry_count = retry_count + 1 WHERE mutation_id IN (:ids)")
     suspend fun incrementRetryCount(ids: List<String>)
 

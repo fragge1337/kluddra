@@ -12,9 +12,11 @@ import app.kluddra.android.data.remote.NoteDto
 import app.kluddra.android.data.remote.ShoppingItemDto
 import app.kluddra.android.data.remote.SyncMutationDto
 import app.kluddra.android.data.remote.SyncPushRequestDto
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
@@ -30,6 +32,9 @@ enum class SyncStateKind {
 data class SyncStatus(
     val kind: SyncStateKind = SyncStateKind.IDLE,
     val lastSyncAt: Long? = null,
+    val serverVersion: String? = null,
+    val isServerOutdated: Boolean = false,
+    val minRecommendedServerVersion: String = ServerVersionPolicy.MIN_RECOMMENDED_SERVER_VERSION,
     val message: String? = null
 )
 
@@ -40,6 +45,21 @@ class SyncEngine(
     private val syncMutex = Mutex()
     private val _status = MutableStateFlow(SyncStatus())
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
+
+    /**
+     * Live sync state enriched with persisted lastSyncAt and server version compatibility
+     * from Room (immediately available on app startup, even while offline).
+     */
+    val observedStatus: Flow<SyncStatus> = combine(_status, db.syncDao().observeMetadata()) { live, meta ->
+        val resolvedVersion = live.serverVersion ?: meta?.serverVersion
+        val check = ServerVersionPolicy.evaluate(resolvedVersion, meta?.serverApiVersion)
+        live.copy(
+            lastSyncAt = live.lastSyncAt ?: meta?.lastSyncAt,
+            serverVersion = check.serverVersion,
+            isServerOutdated = check.isOutdated,
+            minRecommendedServerVersion = check.minRecommendedVersion
+        )
+    }
 
     /**
      * Executes an atomic Push (outbox) followed by paginated Pull (delta by server_seq).
@@ -155,25 +175,30 @@ class SyncEngine(
 
             var maxSeenSeq = sinceSeq
             db.withTransaction {
+                val pendingNoteIds = syncDao.getPendingEntityIds("note").toSet()
+                val pendingShoppingIds = syncDao.getPendingEntityIds("shopping_item").toSet()
+
                 if (pull.notes.isNotEmpty()) {
-                    val entities = pull.notes.map { dto ->
+                    val entities = pull.notes.mapNotNull { dto ->
                         if (dto.serverSeq > maxSeenSeq) maxSeenSeq = dto.serverSeq
-                        dto.toEntity()
+                        if (dto.id in pendingNoteIds) null else dto.toEntity()
                     }
-                    noteDao.upsertAll(entities)
+                    if (entities.isNotEmpty()) noteDao.upsertAll(entities)
                 }
                 if (pull.shoppingItems.isNotEmpty()) {
-                    val entities = pull.shoppingItems.map { dto ->
+                    val entities = pull.shoppingItems.mapNotNull { dto ->
                         if (dto.serverSeq > maxSeenSeq) maxSeenSeq = dto.serverSeq
-                        dto.toEntity()
+                        if (dto.id in pendingShoppingIds) null else dto.toEntity()
                     }
-                    shoppingDao.upsertAll(entities)
+                    if (entities.isNotEmpty()) shoppingDao.upsertAll(entities)
                 }
 
                 val nextSeq = if (pull.hasMore) maxSeenSeq else maxOf(maxSeenSeq, pull.currentSeq)
                 meta = meta.copy(
                     lastPulledSeq = nextSeq,
-                    serverInstanceId = pull.instanceId
+                    serverInstanceId = pull.instanceId,
+                    serverVersion = pull.serverVersion?.takeIf { it.isNotBlank() } ?: meta.serverVersion,
+                    serverApiVersion = pull.apiVersion?.takeIf { it.isNotBlank() } ?: meta.serverApiVersion
                 )
                 syncDao.saveMetadata(meta)
                 sinceSeq = nextSeq
@@ -181,12 +206,25 @@ class SyncEngine(
 
             if (!pull.hasMore) break
         }
+
+        // Fallback for older servers that don't yet include server_version in /api/v1/sync
+        if (meta.serverVersion.isNullOrBlank()) {
+            val info = api.fetchCurrentServerInfo()
+            if (info != null) {
+                meta = meta.copy(
+                    serverVersion = info.serverVersion,
+                    serverApiVersion = info.apiVersion
+                )
+                syncDao.saveMetadata(meta)
+            }
+        }
     }
 
     private fun NoteDto.toEntity(): NoteEntity = NoteEntity(
         id = id,
         title = title,
         body = body,
+        color = color,
         isPinned = isPinned,
         isReadOnly = isReadOnly,
         version = version,

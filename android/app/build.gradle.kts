@@ -41,7 +41,7 @@ android {
     }
 
     androidResources {
-        localeFilters += listOf("en", "sv")
+        localeFilters += listOf("en", "sv", "de", "fr", "es", "it", "pt", "nl", "pl", "nb", "da")
     }
 
     packaging {

@@ -11,32 +11,36 @@
     <string name="action_back">Back</string>
 
     <!-- Notes Overview -->
-    <string name="search_notes_placeholder">Search in Kluddra</string>
-    <string name="clear_search">Clear search</string>
-    <string name="toggle_layout_grid">Switch to grid layout</string>
-    <string name="toggle_layout_list">Switch to list layout</string>
+    <string name="search_notes_placeholder">Search notes…</string>
+    <string name="clear_search">Close search</string>
+    <string name="toggle_layout_grid">Grid view</string>
+    <string name="toggle_layout_list">List view</string>
     <string name="section_pinned">Pinned</string>
     <string name="section_notes">Notes</string>
     <string name="new_note">New note</string>
     <string name="empty_notes_title">Capture your first thought</string>
-    <string name="empty_notes_subtitle">Tap the button below to write a note. Everything saves automatically and works offline.</string>
+    <string name="empty_notes_subtitle">Tap the + button to write a note. Everything saves automatically and works offline.</string>
     <string name="empty_search_title">No matching notes</string>
-    <string name="empty_search_subtitle">Try another word or clear the search.</string>
+    <string name="empty_search_subtitle">Try another word or close the search.</string>
     <string name="untitled_note">Untitled</string>
-    <string name="badge_read_only">Write-protected</string>
+    <string name="badge_read_only">Read-only</string>
     <string name="badge_conflict">Conflict copy</string>
     <string name="select_note_prompt">Select a note or create a new one</string>
 
     <!-- Note Editor -->
-    <string name="editor_title_hint">Title</string>
+    <string name="editor_title_hint">Title (optional)</string>
     <string name="editor_body_hint">Start writing…</string>
+    <string name="format_bold">Bold</string>
+    <string name="format_checklist">Checklist</string>
+    <string name="format_numbered_list">Numbered list</string>
+    <string name="action_note_color">Note color</string>
     <string name="action_pin">Pin note</string>
     <string name="action_unpin">Unpin note</string>
     <string name="action_lock">Protect from edits</string>
     <string name="action_unlock">Unlock to edit</string>
     <string name="action_share">Share</string>
     <string name="action_delete">Move to trash</string>
-    <string name="read_only_banner">Write-protected — unlock to edit</string>
+    <string name="read_only_banner">Read-only — unlock to edit</string>
     <string name="conflict_banner">Conflict copy created so no offline edits were lost. Review and delete when ready.</string>
     <string name="snackbar_note_trashed">Note moved to trash</string>
     <string name="action_undo">Undo</string>
@@ -56,7 +60,7 @@
     <string name="action_confirm">Confirm</string>
 
     <!-- Shopping List -->
-    <string name="shopping_title">Shopping list</string>
+    <string name="shopping_title">Shopping</string>
     <string name="shopping_remaining_count">%1$d left</string>
     <string name="shopping_all_done">All done</string>
     <string name="shopping_add_placeholder">Add item…</string>
@@ -64,13 +68,13 @@
     <string name="shopping_checked_section">Checked (%1$d)</string>
     <string name="shopping_clear_checked">Clear checked</string>
     <string name="shopping_clear_all">Clear list</string>
-    <string name="shopping_empty_title">Your shopping list is ready</string>
+    <string name="shopping_empty_title">Shopping list ready</string>
     <string name="shopping_empty_subtitle">Add items below and check them off with one hand in the store.</string>
     <string name="shopping_drag_handle">Drag to reorder</string>
     <string name="shopping_edit_item">Edit item</string>
-    <string name="shopping_delete_item">Remove item</string>
+    <string name="shopping_delete_item">Remove</string>
     <string name="shopping_item_removed">Item removed</string>
-    <string name="confirm_clear_all_title">Clear entire shopping list?</string>
+    <string name="confirm_clear_all_title">Clear shopping list?</string>
     <string name="confirm_clear_all_body">All %1$d items will be removed so you can start fresh.</string>
     <string name="shopping_cleared_snackbar">Shopping list cleared</string>
 
@@ -78,10 +82,10 @@
     <string name="sync_status_synced">Synced</string>
     <string name="sync_status_syncing">Syncing…</string>
     <string name="sync_status_offline">Offline — saved locally</string>
-    <string name="sync_status_pending">%1$d pending changes</string>
-    <string name="sync_status_error">Could not reach server</string>
-    <string name="sync_status_auth_expired">Session expired — sign in again</string>
-    <string name="action_sync_now">Sync now</string>
+    <string name="sync_status_pending">%1$d pending</string>
+    <string name="sync_status_error">Server unreachable</string>
+    <string name="sync_status_auth_expired">Session expired</string>
+    <string name="action_sync_now">Sync</string>
 
     <!-- Onboarding & Connection -->
     <string name="onboarding_headline">Your notes.\nYour server.</string>
@@ -91,8 +95,8 @@
     <string name="action_connect">Continue</string>
     <string name="username_label">Username</string>
     <string name="password_label">Password</string>
-    <string name="setup_code_label">Initial setup code (from server log)</string>
-    <string name="setup_heading">Create your first account</string>
+    <string name="setup_code_label">Setup code (from server log)</string>
+    <string name="setup_heading">Create account</string>
     <string name="setup_subtitle">This Kluddra server is brand new. Enter the one-time code printed in your Docker container logs.</string>
     <string name="login_heading">Sign in</string>
     <string name="login_subtitle">Connected to %1$s</string>
@@ -101,13 +105,13 @@
     <string name="action_change_server">Change server</string>
     <string name="local_http_warning_title">Unencrypted local connection</string>
     <string name="local_http_warning_body">You are connecting over plain HTTP on your local network (%1$s). Only use this on a trusted private home network, never over the internet.</string>
-    <string name="local_http_warning_confirm">Allow local HTTP</string>
-    <string name="error_public_http_blocked">Unencrypted HTTP is blocked for public addresses. Use HTTPS (e.g. via reverse proxy).</string>
+    <string name="local_http_warning_confirm">Allow HTTP</string>
+    <string name="error_public_http_blocked">Unencrypted HTTP is blocked for public addresses. Use HTTPS.</string>
     <string name="error_invalid_url">Enter a valid server address.</string>
 
     <!-- Settings -->
     <string name="settings_section_server">Server &amp; Sync</string>
-    <string name="settings_section_appearance">Appearance &amp; Language</string>
+    <string name="settings_section_appearance">Appearance</string>
     <string name="settings_section_data">Your Data</string>
     <string name="settings_section_about">About</string>
     <string name="settings_server_address">Server</string>
@@ -116,15 +120,11 @@
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
     <string name="theme_system">System</string>
-    <string name="settings_dynamic_color">Dynamic colors (Material You)</string>
+    <string name="settings_dynamic_color">Dynamic colors</string>
     <string name="settings_dynamic_color_desc">Match your wallpaper palette instead of Kluddra colors</string>
-    <string name="settings_language">Language</string>
-    <string name="language_system">System default</string>
-    <string name="language_sv">Svenska</string>
-    <string name="language_en">English</string>
     <string name="settings_trash_count">%1$d notes in trash</string>
     <string name="settings_export_json">Export backup (JSON)</string>
-    <string name="settings_export_json_desc">Complete notes and shopping list in open JSON format</string>
+    <string name="settings_export_json_desc">All notes and shopping list in open JSON format</string>
     <string name="settings_export_markdown">Export readable notes (Markdown ZIP)</string>
     <string name="settings_export_markdown_desc">Each note as a plain .md file plus shopping-list.md</string>
     <string name="settings_export_success">Export saved</string>
@@ -134,4 +134,30 @@
     <string name="confirm_sign_out_body">Local notes on this device will be cleared. Make sure all changes are synced first.</string>
     <string name="settings_app_version">App version %1$s</string>
     <string name="settings_privacy_note">Zero ads, zero tracking, zero external cloud services.</string>
+    <string name="sync_dialog_title">Sync status</string>
+    <string name="sync_last_synced">Last synced: %1$s</string>
+    <string name="sync_never">Never</string>
+    <string name="sync_time_just_now">Just now</string>
+    <string name="sync_time_minutes_ago">%1$d min ago</string>
+    <string name="sync_time_hours_ago">%1$d h ago</string>
+    <string name="sync_time_days_ago">%1$d d ago</string>
+    <string name="sync_failed_snackbar">Sync failed</string>
+    <string name="action_retry">Retry</string>
+    <string name="settings_server_version">Server version: %1$s</string>
+    <string name="server_outdated_title">Server update recommended</string>
+    <string name="server_outdated_body">Your server (%1$s) is older than recommended (%2$s). Update your Kluddra Server container for full compatibility and security fixes.</string>
+    <string name="settings_active_sessions">Active devices</string>
+    <string name="settings_active_sessions_desc">View signed-in devices and revoke lost ones</string>
+    <string name="sessions_this_device">This device</string>
+    <string name="sessions_last_active">Last active: %1$s</string>
+    <string name="sessions_unknown_device">Unknown device</string>
+    <string name="sessions_only_this_device">Only this device is currently signed in.</string>
+    <string name="sessions_revoke_device">Sign out device</string>
+    <string name="sessions_revoke_others">Sign out all other devices</string>
+    <string name="sessions_revoke_others_confirm_title">Sign out all other devices?</string>
+    <string name="sessions_revoke_others_confirm_body">All other phones and tablets will be signed out immediately. This device stays signed in.</string>
+    <string name="sessions_revoked_one">Device signed out</string>
+    <string name="sessions_revoked_others">Signed out %1$d other device(s)</string>
+    <string name="sessions_load_failed">Could not load active devices</string>
+    <string name="sessions_action_failed">Could not update active devices</string>
 </resources>

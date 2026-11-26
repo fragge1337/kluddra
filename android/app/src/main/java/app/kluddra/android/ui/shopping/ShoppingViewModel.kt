@@ -33,7 +33,7 @@ class ShoppingViewModel(
 
     val uiState: StateFlow<ShoppingListUiState> = combine(
         repository.observeItems(),
-        syncEngine.status,
+        syncEngine.observedStatus,
         pendingCountFlow,
         isRefreshing
     ) { items, sync, pending, refreshing ->

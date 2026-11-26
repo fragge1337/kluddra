@@ -49,7 +49,7 @@ class NotesViewModel(
         searchQuery,
         notesFlow,
         preferences.settingsFlow.map { it.notesLayoutMode },
-        syncEngine.status,
+        syncEngine.observedStatus,
         pendingCountFlow,
         isRefreshing
     ) { values ->

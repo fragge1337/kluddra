@@ -30,6 +30,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -136,6 +138,7 @@ fun KluddraAppShell(
 
     val listDetailNavigator = rememberListDetailPaneScaffoldNavigator<String>()
     val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
 
     // Handle incoming ACTION_SEND text from other Android apps
     LaunchedEffect(incomingSharedNote) {
@@ -161,8 +164,10 @@ fun KluddraAppShell(
                 state = settingsState,
                 onThemeModeChange = settingsVm::setThemeMode,
                 onDynamicColorChange = settingsVm::setDynamicColor,
-                onLanguageChange = settingsVm::setLanguageTag,
                 onSyncNow = settingsVm::syncNow,
+                onRefreshSessions = settingsVm::refreshSessions,
+                onRevokeSession = settingsVm::revokeSession,
+                onRevokeOtherSessions = settingsVm::revokeOtherSessions,
                 onOpenTrash = { overlay = SecondaryOverlay.TRASH },
                 onExportJson = settingsVm::exportJson,
                 onExportMarkdownZip = settingsVm::exportMarkdownZip,
@@ -201,11 +206,16 @@ fun KluddraAppShell(
             listDetailNavigator.currentDestination?.pane == ListDetailPaneScaffoldRole.Detail
 
     val adaptiveInfo = currentWindowAdaptiveInfo()
+    val defaultLayoutType = androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
+        .calculateFromAdaptiveInfo(adaptiveInfo)
+
+    // Keep the bottom navigation bar mounted when the Shopping IME opens/closes so the
+    // "Add item" dock never drops past the nav bar and bounces back up on dismiss.
+    // ShoppingListScreen subtracts the nav bar's exact height from WindowInsets.ime.
     val layoutType = if (isInSinglePaneEditor) {
         NavigationSuiteType.None
     } else {
-        androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
-            .calculateFromAdaptiveInfo(adaptiveInfo)
+        defaultLayoutType
     }
 
     NavigationSuiteScaffold(
@@ -213,7 +223,12 @@ fun KluddraAppShell(
         navigationSuiteItems = {
             item(
                 selected = primaryDestination == PrimaryDestination.NOTES,
-                onClick = { primaryDestination = PrimaryDestination.NOTES },
+                onClick = {
+                    if (primaryDestination != PrimaryDestination.NOTES) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                    primaryDestination = PrimaryDestination.NOTES
+                },
                 icon = {
                     Icon(
                         imageVector = if (primaryDestination == PrimaryDestination.NOTES) {
@@ -228,7 +243,12 @@ fun KluddraAppShell(
             )
             item(
                 selected = primaryDestination == PrimaryDestination.SHOPPING,
-                onClick = { primaryDestination = PrimaryDestination.SHOPPING },
+                onClick = {
+                    if (primaryDestination != PrimaryDestination.SHOPPING) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                    primaryDestination = PrimaryDestination.SHOPPING
+                },
                 icon = {
                     Icon(
                         imageVector = if (primaryDestination == PrimaryDestination.SHOPPING) {
@@ -303,7 +323,12 @@ fun KluddraAppShell(
                                     state = editorState,
                                     showBackButton = !isDualPane,
                                     onTitleChange = editorVm::onTitleChange,
-                                    onBodyChange = editorVm::onBodyChange,
+                                    onBlockFocused = editorVm::onBlockFocused,
+                                    onBlockTextChange = editorVm::onBlockTextChange,
+                                    onBlockBackspaceWhenEmpty = editorVm::onBlockBackspaceWhenEmpty,
+                                    onToggleBlockCheckbox = editorVm::toggleBlockCheckbox,
+                                    onToggleListType = editorVm::toggleListTypeOnFocusedBlock,
+                                    onSelectColor = editorVm::setColor,
                                     onTogglePin = editorVm::togglePin,
                                     onToggleReadOnly = editorVm::toggleReadOnly,
                                     onDelete = {
@@ -331,7 +356,6 @@ fun KluddraAppShell(
                     state = shoppingState,
                     onAddItem = shoppingVm::addItem,
                     onToggleChecked = shoppingVm::toggleChecked,
-                    onUpdateText = shoppingVm::updateItemText,
                     onReorderActive = shoppingVm::reorderActive,
                     onDeleteItem = shoppingVm::deleteItem,
                     onClearChecked = shoppingVm::clearChecked,

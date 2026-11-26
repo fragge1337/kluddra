@@ -2,25 +2,43 @@ services:
   kluddra:
     image: ghcr.io/fragge1337/kluddra-server:latest
     container_name: kluddra
+    # Optional - run as a dedicated host/DSM user (UID:GID) so bind-mounted ./data matches
+    # your NAS permissions. If omitted, Kluddra safely defaults to nonroot (65532:65532), never root.
+    # user: "1032:100"
     restart: unless-stopped
+    # Bind to localhost by default so Kluddra is only reachable through your reverse proxy
+    # (Synology Reverse Proxy, Caddy, Nginx Proxy Manager, Traefik).
+    # For maximum isolation, remove `ports` and connect Kluddra and your reverse proxy via
+    # a shared `internal: true` Docker network (example below) so the container has zero
+    # outbound internet access.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./data:/data
     environment:
       - KLUDDRA_PORT=8080
       - KLUDDRA_DATA_DIR=/data
-      - KLUDDRA_TRUSTED_PROXIES=127.0.0.1/32,172.16.0.0/12,192.168.0.0/16
+      # Narrow to your exact reverse proxy IP/CIDR (e.g. 127.0.0.1/32 or your proxy container subnet).
+      - KLUDDRA_TRUSTED_PROXIES=127.0.0.1/32
       - KLUDDRA_BACKUP_ENABLED=true
       - KLUDDRA_BACKUP_RETAIN_DAYS=14
       - KLUDDRA_TRASH_RETAIN_DAYS=30
       - KLUDDRA_LOG_LEVEL=info
     read_only: true
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
     healthcheck:
-      test: ["/kluddra", "healthcheck"]
+      test: ["CMD", "/kluddra", "healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 5s
+
+# Optional zero-egress network isolation (prevents outbound data exfiltration even if compromised):
+# networks:
+#   kluddra_internal:
+#     internal: true

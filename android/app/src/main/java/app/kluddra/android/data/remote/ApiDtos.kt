@@ -58,10 +58,31 @@ data class AuthTokensResponseDto(
 )
 
 @Serializable
+data class SessionInfoDto(
+    val id: String,
+    @SerialName("device_name") val deviceName: String = "",
+    @SerialName("created_at") val createdAt: Long = 0,
+    @SerialName("last_used_at") val lastUsedAt: Long = 0,
+    @SerialName("expires_at") val expiresAt: Long = 0,
+    val current: Boolean = false
+)
+
+@Serializable
+data class SessionsResponseDto(
+    val sessions: List<SessionInfoDto> = emptyList()
+)
+
+@Serializable
+data class RevokeOthersResponseDto(
+    @SerialName("revoked_count") val revokedCount: Int = 0
+)
+
+@Serializable
 data class NoteDto(
     val id: String,
     val title: String = "",
     val body: String = "",
+    val color: String = "",
     @SerialName("is_pinned") val isPinned: Boolean = false,
     @SerialName("is_read_only") val isReadOnly: Boolean = false,
     val version: Long = 1,
@@ -89,6 +110,8 @@ data class ShoppingItemDto(
 @Serializable
 data class SyncPullResponseDto(
     @SerialName("instance_id") val instanceId: String,
+    @SerialName("server_version") val serverVersion: String? = null,
+    @SerialName("api_version") val apiVersion: String? = null,
     @SerialName("current_seq") val currentSeq: Long,
     @SerialName("has_more") val hasMore: Boolean = false,
     val notes: List<NoteDto> = emptyList(),
@@ -135,6 +158,7 @@ data class SyncPushResponseDto(
 data class NoteUpsertPayloadDto(
     val title: String,
     val body: String,
+    val color: String = "",
     @SerialName("is_pinned") val isPinned: Boolean,
     @SerialName("is_read_only") val isReadOnly: Boolean,
     @SerialName("created_at") val createdAt: Long,
@@ -144,6 +168,11 @@ data class NoteUpsertPayloadDto(
 @Serializable
 data class FlagPayloadDto(
     val value: Boolean
+)
+
+@Serializable
+data class ColorPayloadDto(
+    val color: String
 )
 
 @Serializable
