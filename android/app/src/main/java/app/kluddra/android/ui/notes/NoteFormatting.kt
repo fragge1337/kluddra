@@ -1,5 +1,6 @@
 package app.kluddra.android.ui.notes
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -16,11 +17,20 @@ enum class NoteBlockType {
     NUMBERED
 }
 
+@Immutable
 data class NoteBlock(
     val uid: String,
     val type: NoteBlockType,
     val text: String,
     val isChecked: Boolean = false
+)
+
+@Immutable
+data class NotePreviewBlock(
+    val type: NoteBlockType,
+    val renderedText: AnnotatedString,
+    val isChecked: Boolean = false,
+    val ordinal: Int = 0
 )
 
 /**
@@ -105,9 +115,102 @@ object NoteFormatting {
     }
 
     /**
+     * Fast-path preview parser for NoteCard: scans line-by-line without splitting the entire note,
+     * stops immediately once [maxBlocks] visible blocks are collected, and pre-renders bold spans.
+     */
+    fun parsePreviewBlocks(body: String, maxBlocks: Int): List<NotePreviewBlock> {
+        if (body.isEmpty() || maxBlocks <= 0) return emptyList()
+        val result = ArrayList<NotePreviewBlock>(maxBlocks)
+        var lineStart = 0
+        val len = body.length
+        var num = 0
+        while (lineStart <= len && result.size < maxBlocks) {
+            val nl = body.indexOf('\n', lineStart)
+            val lineEnd = if (nl == -1) len else nl
+            val rawLine = body.substring(lineStart, lineEnd)
+            lineStart = if (nl == -1) len + 1 else nl + 1
+
+            val checkedMatch = if (rawLine.startsWith("-")) CHECKBOX_CHECKED.matchEntire(rawLine) else null
+            val uncheckedMatch = if (checkedMatch == null && rawLine.startsWith("-")) CHECKBOX_UNCHECKED.matchEntire(rawLine) else null
+            val numberedMatch = if (checkedMatch == null && uncheckedMatch == null && rawLine.firstOrNull()?.isDigit() == true) {
+                NUMBERED.matchEntire(rawLine)
+            } else {
+                null
+            }
+
+            when {
+                checkedMatch != null -> {
+                    num = 0
+                    result.add(
+                        NotePreviewBlock(
+                            type = NoteBlockType.CHECKBOX,
+                            renderedText = renderInlineBold(checkedMatch.groupValues[1]),
+                            isChecked = true
+                        )
+                    )
+                }
+                uncheckedMatch != null -> {
+                    num = 0
+                    result.add(
+                        NotePreviewBlock(
+                            type = NoteBlockType.CHECKBOX,
+                            renderedText = renderInlineBold(uncheckedMatch.groupValues[1]),
+                            isChecked = false
+                        )
+                    )
+                }
+                numberedMatch != null -> {
+                    num++
+                    result.add(
+                        NotePreviewBlock(
+                            type = NoteBlockType.NUMBERED,
+                            renderedText = renderInlineBold(numberedMatch.groupValues[1]),
+                            ordinal = num
+                        )
+                    )
+                }
+                rawLine.isNotBlank() -> {
+                    num = 0
+                    result.add(
+                        NotePreviewBlock(
+                            type = NoteBlockType.PARAGRAPH,
+                            renderedText = renderInlineBold(rawLine)
+                        )
+                    )
+                }
+                else -> {
+                    num = 0
+                }
+            }
+        }
+        return result
+    }
+
+    /**
+     * O(1) automatic title derivation directly from already-parsed editor blocks,
+     * avoiding full-note serialization + regex re-parsing on every keystroke.
+     */
+    fun autoGenerateTitleFromBlocks(blocks: List<NoteBlock>, maxLength: Int = 46): String {
+        val firstLine = blocks.firstNotNullOfOrNull { block ->
+            val cleaned = stripBoldMarkers(block.text).trim()
+            cleaned.takeIf { it.isNotEmpty() }
+        } ?: return ""
+        return truncateTitle(firstLine, maxLength)
+    }
+
+    private fun truncateTitle(firstLine: String, maxLength: Int): String {
+        if (firstLine.length <= maxLength) return firstLine
+        val cut = firstLine.take(maxLength)
+        val lastSpace = cut.lastIndexOf(' ')
+        val clean = if (lastSpace >= maxLength / 2) cut.substring(0, lastSpace) else cut
+        return clean.trimEnd('.', ',', ';', ':', ' ') + "…"
+    }
+
+    /**
      * Returns true if [cursor] lies inside a **bold** Markdown span.
      */
     fun isCursorInBold(text: String, cursor: Int): Boolean {
+        if (!text.contains("**")) return false
         val pos = cursor.coerceIn(0, text.length)
         for (match in BOLD_SPAN.findAll(text)) {
             val innerStart = match.range.first + 2
@@ -122,6 +225,7 @@ object NoteFormatting {
      * if the cursor lies inside a bold span). Used to drive the Bold toolbar toggle state.
      */
     fun isSelectionFullyBold(text: String, selection: TextRange): Boolean {
+        if (!text.contains("**")) return false
         val start = minOf(selection.start, selection.end).coerceIn(0, text.length)
         val end = maxOf(selection.start, selection.end).coerceIn(0, text.length)
         if (start == end) {
@@ -325,19 +429,22 @@ object NoteFormatting {
     /**
      * Renders **bold** spans cleanly as FontWeight.Bold without showing raw ** asterisks.
      */
-    fun renderInlineBold(raw: String): AnnotatedString = buildAnnotatedString {
-        var cursor = 0
-        for (match in BOLD_SPAN.findAll(raw)) {
-            if (match.range.first > cursor) {
-                append(raw.substring(cursor, match.range.first))
+    fun renderInlineBold(raw: String): AnnotatedString {
+        if (!raw.contains("**")) return AnnotatedString(raw)
+        return buildAnnotatedString {
+            var cursor = 0
+            for (match in BOLD_SPAN.findAll(raw)) {
+                if (match.range.first > cursor) {
+                    append(raw.substring(cursor, match.range.first))
+                }
+                pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                append(match.groupValues[1])
+                pop()
+                cursor = match.range.last + 1
             }
-            pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
-            append(match.groupValues[1])
-            pop()
-            cursor = match.range.last + 1
-        }
-        if (cursor < raw.length) {
-            append(raw.substring(cursor))
+            if (cursor < raw.length) {
+                append(raw.substring(cursor))
+            }
         }
     }
 
@@ -346,20 +453,36 @@ object NoteFormatting {
      * when the user didn't enter a manual title.
      */
     fun autoGenerateTitle(body: String, maxLength: Int = 46): String {
-        val firstLine = parseBlocks(body)
-            .map { stripBoldMarkers(it.text).trim() }
-            .firstOrNull { it.isNotEmpty() }
-            ?: return ""
+        if (body.isEmpty()) return ""
+        var lineStart = 0
+        val len = body.length
+        while (lineStart <= len) {
+            val nl = body.indexOf('\n', lineStart)
+            val lineEnd = if (nl == -1) len else nl
+            val rawLine = body.substring(lineStart, lineEnd)
+            lineStart = if (nl == -1) len + 1 else nl + 1
 
-        if (firstLine.length <= maxLength) return firstLine
-        val cut = firstLine.take(maxLength)
-        val lastSpace = cut.lastIndexOf(' ')
-        val clean = if (lastSpace >= maxLength / 2) cut.substring(0, lastSpace) else cut
-        return clean.trimEnd('.', ',', ';', ':', ' ') + "…"
+            val inner = when {
+                rawLine.startsWith("-") -> {
+                    CHECKBOX_CHECKED.matchEntire(rawLine)?.groupValues?.get(1)
+                        ?: CHECKBOX_UNCHECKED.matchEntire(rawLine)?.groupValues?.get(1)
+                        ?: rawLine
+                }
+                rawLine.firstOrNull()?.isDigit() == true -> {
+                    NUMBERED.matchEntire(rawLine)?.groupValues?.get(1) ?: rawLine
+                }
+                else -> rawLine
+            }
+            val cleaned = stripBoldMarkers(inner).trim()
+            if (cleaned.isNotEmpty()) {
+                return truncateTitle(cleaned, maxLength)
+            }
+        }
+        return ""
     }
 
     fun stripBoldMarkers(text: String): String =
-        BOLD_SPAN.replace(text, "$1").replace("**", "")
+        if (!text.contains("**")) text else BOLD_SPAN.replace(text, "$1").replace("**", "")
 
     /**
      * Formats note content cleanly for Android Share intents.
@@ -405,11 +528,12 @@ object NoteFormatting {
  * while preserving exact cursor & selection mapping!
  */
 class BoldMarkdownVisualTransformation : VisualTransformation {
-    private val boldRegex = Regex("""\*\*(.*?)\*\*""")
-
     override fun filter(text: AnnotatedString): TransformedText {
         val raw = text.text
-        val matches = boldRegex.findAll(raw).toList()
+        if (!raw.contains("**")) {
+            return TransformedText(text, OffsetMapping.Identity)
+        }
+        val matches = BOLD_TRANSFORM_REGEX.findAll(raw).toList()
         if (matches.isEmpty()) {
             return TransformedText(text, OffsetMapping.Identity)
         }
@@ -477,5 +601,9 @@ class BoldMarkdownVisualTransformation : VisualTransformation {
         }
 
         return TransformedText(builder.toAnnotatedString(), mapping)
+    }
+
+    private companion object {
+        val BOLD_TRANSFORM_REGEX = Regex("""\*\*(.*?)\*\*""")
     }
 }

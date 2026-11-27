@@ -19,6 +19,53 @@ data class KluddraSemanticColors(
     val onWarningContainer: Color
 )
 
+/**
+ * Deliberate 5-layer depth tokens (Z-1 recessed wells -> Z0 canvas -> Z+1 cards ->
+ * Z+2 anchored chrome -> Z+3 floating tools/FAB) tuned separately for Light Mode and
+ * the dimmed slate Dark Mode (#23242B) so physical layering reads clearly without harshness.
+ */
+data class KluddraElevationColors(
+    val recessedWell: Color,
+    val recessedInnerShadow: Color,
+    val recessedBottomCatch: Color,
+    val cardAmbientShadow: Color,
+    val cardSpotShadow: Color,
+    val cardTopHighlight: Color,
+    val cardBottomEdge: Color,
+    val navBarContainer: Color,
+    val navBarTopShadow: Color,
+    val fabAmbientShadow: Color,
+    val fabKeyShadow: Color
+)
+
+val KluddraLightElevationColors = KluddraElevationColors(
+    recessedWell = Color(0xFFE2DCEB),
+    recessedInnerShadow = Color(0xFF281D40).copy(alpha = 0.09f),
+    recessedBottomCatch = Color.White.copy(alpha = 0.72f),
+    cardAmbientShadow = Color(0xFF2B2044).copy(alpha = 0.22f),
+    cardSpotShadow = Color(0xFF22183A).copy(alpha = 0.34f),
+    cardTopHighlight = Color.White.copy(alpha = 0.88f),
+    cardBottomEdge = Color(0xFF564A6E).copy(alpha = 0.16f),
+    navBarContainer = Color(0xFFFAF8FD),
+    navBarTopShadow = Color(0xFF23183A).copy(alpha = 0.055f),
+    fabAmbientShadow = Color(0xFF5A3DB0).copy(alpha = 0.34f),
+    fabKeyShadow = Color(0xFF1F123D).copy(alpha = 0.28f)
+)
+
+val KluddraDarkElevationColors = KluddraElevationColors(
+    recessedWell = Color(0xFF1B1C22),
+    recessedInnerShadow = Color.Black.copy(alpha = 0.34f),
+    recessedBottomCatch = Color.White.copy(alpha = 0.07f),
+    cardAmbientShadow = Color.Black.copy(alpha = 0.62f),
+    cardSpotShadow = Color.Black.copy(alpha = 0.85f),
+    cardTopHighlight = Color.White.copy(alpha = 0.13f),
+    cardBottomEdge = Color.Black.copy(alpha = 0.30f),
+    navBarContainer = Color(0xFF30323D),
+    navBarTopShadow = Color.Black.copy(alpha = 0.15f),
+    fabAmbientShadow = Color.Black.copy(alpha = 0.48f),
+    fabKeyShadow = Color.Black.copy(alpha = 0.68f)
+)
+
 val KluddraLightSemanticColors = KluddraSemanticColors(
     success = Color(0xFF1E7E3E),
     onSuccess = Color(0xFFFFFFFF),
@@ -62,22 +109,22 @@ val KluddraLightColorScheme = lightColorScheme(
     errorContainer = Color(0xFFFFDAD6),
     onErrorContainer = Color(0xFF410002),
 
-    background = Color(0xFFF4F1F8),
+    background = Color(0xFFECE8F3),
     onBackground = Color(0xFF19171E),
 
-    surface = Color(0xFFF4F1F8),
+    surface = Color(0xFFECE8F3),
     onSurface = Color(0xFF19171E),
-    surfaceVariant = Color(0xFFE6E0F0),
+    surfaceVariant = Color(0xFFE0D9EC),
     onSurfaceVariant = Color(0xFF4A4458),
 
     surfaceContainerLowest = Color(0xFFFFFFFF),
     surfaceContainerLow = Color(0xFFFFFFFF),
-    surfaceContainer = Color(0xFFEAE5F3),
-    surfaceContainerHigh = Color(0xFFE0D9EC),
-    surfaceContainerHighest = Color(0xFFD6CDE6),
+    surfaceContainer = Color(0xFFE4DDF0),
+    surfaceContainerHigh = Color(0xFFDBD2EA),
+    surfaceContainerHighest = Color(0xFFD1C6E3),
 
-    outline = Color(0xFF7B738A),
-    outlineVariant = Color(0xFFCCC4DB),
+    outline = Color(0xFF787087),
+    outlineVariant = Color(0xFFC8BFDA),
     inverseSurface = Color(0xFF2E2B36),
     inverseOnSurface = Color(0xFFF5EFFB),
     inversePrimary = Color(0xFFCBB6FA)
@@ -104,23 +151,23 @@ val KluddraDarkColorScheme = darkColorScheme(
     errorContainer = Color(0xFF93000A),
     onErrorContainer = Color(0xFFFFDAD6),
 
-    background = Color(0xFF1C1C1C),
-    onBackground = Color(0xFFF2F2F4),
+    background = Color(0xFF23242B),
+    onBackground = Color(0xFFF2F2F6),
 
-    surface = Color(0xFF1C1C1C),
-    onSurface = Color(0xFFF2F2F4),
-    surfaceVariant = Color(0xFF2D2D30),
-    onSurfaceVariant = Color(0xFFC2C2C7),
+    surface = Color(0xFF23242B),
+    onSurface = Color(0xFFF2F2F6),
+    surfaceVariant = Color(0xFF333540),
+    onSurfaceVariant = Color(0xFFC4C5CF),
 
-    surfaceContainerLowest = Color(0xFF141414),
-    surfaceContainerLow = Color(0xFF252527),
-    surfaceContainer = Color(0xFF2C2C2F),
-    surfaceContainerHigh = Color(0xFF343438),
-    surfaceContainerHighest = Color(0xFF3E3E42),
+    surfaceContainerLowest = Color(0xFF1B1C22),
+    surfaceContainerLow = Color(0xFF2E303A),
+    surfaceContainer = Color(0xFF343642),
+    surfaceContainerHigh = Color(0xFF3C3F4D),
+    surfaceContainerHighest = Color(0xFF454858),
 
-    outline = Color(0xFF8E8E95),
-    outlineVariant = Color(0xFF46464C),
-    inverseSurface = Color(0xFFF2F2F4),
-    inverseOnSurface = Color(0xFF1E1E20),
+    outline = Color(0xFF9092A0),
+    outlineVariant = Color(0xFF4B4E5E),
+    inverseSurface = Color(0xFFF2F2F6),
+    inverseOnSurface = Color(0xFF1F2026),
     inversePrimary = Color(0xFF7152B8)
 )

@@ -125,7 +125,7 @@
     <string name="confirm_sign_out_title">Wylogować się?</string>
     <string name="confirm_sign_out_body">Lokalne notatki na tym urządzeniu zostaną usunięte.</string>
     <string name="settings_app_version">Wersja %1$s</string>
-    <string name="settings_privacy_note">Bez reklam, bez śledzenia, bez zewnętrznych chmur.</string>
+    <string name="settings_privacy_note">Twoje dane. Twoje urządzenie. Twoja własna chmura.</string>
     <string name="sync_dialog_title">Status synchronizacji</string>
     <string name="sync_last_synced">Ostatnia synchronizacja: %1$s</string>
     <string name="sync_never">Nigdy</string>
@@ -152,4 +152,23 @@
     <string name="sessions_revoked_others">Wylogowano %1$d innych urządzeń</string>
     <string name="sessions_load_failed">Nie udało się pobrać aktywnych urządzeń</string>
     <string name="sessions_action_failed">Nie udało się zaktualizować aktywnych urządzeń</string>
+    <string name="welcome_headline">Witaj w Kluddra</string>
+    <string name="welcome_subtitle">Prywatne notatki i listy zakupów przechowywane na Twoim urządzeniu, z opcjonalną synchronizacją z własnym serwerem.</string>
+    <string name="action_start_local">Używaj lokalnie</string>
+    <string name="action_connect_server">Połącz własny serwer</string>
+    <string name="welcome_later_hint">Możesz w każdej chwili połączyć własny serwer Kluddra w Ustawieniach.</string>
+    <string name="settings_local_mode_title">Tryb lokalny (tylko to urządzenie)</string>
+    <string name="settings_local_mode_desc">Twoje notatki i lista zakupów są bezpiecznie zapisane na tym urządzeniu. Połącz własny serwer Kluddra, gdy zechcesz synchronizować dane między urządzeniami.</string>
+    <string name="confirm_sign_out_body_choice">Wybierz, czy zachować lokalną kopię na tym urządzeniu, czy wyczyścić wszystkie dane lokalne.</string>
+    <string name="action_sign_out_keep_local">Wyloguj i zachowaj lokalnie</string>
+    <string name="action_sign_out_clear_device">Wyloguj i wyczyść urządzenie</string>
+    <string name="sort_notes">Sortuj notatki</string>
+    <string name="sort_updated_desc">Ostatnio edytowane</string>
+    <string name="sort_created_desc">Najnowsze</string>
+    <string name="sort_created_asc">Najstarsze</string>
+    <string name="sort_title_asc">Tytuł (A–Z)</string>
+    <string name="date_today_time">Dzisiaj %1$s</string>
+    <string name="date_yesterday">Wczoraj</string>
+    <string name="editor_meta_edited_created">Edytowano %1$s · Utworzono %2$s</string>
+    <string name="editor_meta_created">Utworzono %1$s</string>
 </resources>

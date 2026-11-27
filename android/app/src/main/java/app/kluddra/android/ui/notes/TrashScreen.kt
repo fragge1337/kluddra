@@ -6,10 +6,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +49,9 @@ import androidx.compose.ui.unit.dp
 import app.kluddra.android.R
 import app.kluddra.android.data.local.NoteEntity
 import app.kluddra.android.ui.components.KluddraEmptyState
+import app.kluddra.android.ui.components.kluddraCardShadow
+import app.kluddra.android.ui.components.kluddraRaisedBorder
+import app.kluddra.android.ui.theme.LocalKluddraDarkTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,13 +63,17 @@ fun TrashScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val darkTheme = LocalKluddraDarkTheme.current
     var confirmEmpty by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets.statusBars.only(WindowInsetsSides.Top)
+                    .union(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal)),
                 title = { Text(stringResource(R.string.trash_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -80,7 +94,7 @@ fun TrashScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.background
                 )
             )
         }
@@ -106,7 +120,7 @@ fun TrashScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                item(key = "trash_hint") {
+                item(key = "trash_hint", contentType = "trash_hint") {
                     Text(
                         text = stringResource(R.string.trash_retention_hint),
                         style = MaterialTheme.typography.bodySmall,
@@ -114,13 +128,20 @@ fun TrashScreen(
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
                     )
                 }
-                items(trashedNotes, key = { it.id }) { note ->
+                items(trashedNotes, key = { it.id }, contentType = { "trash_note" }) { note ->
+                    val cardShape = RoundedCornerShape(24.dp)
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        shape = RoundedCornerShape(20.dp),
+                        shape = cardShape,
+                        border = kluddraRaisedBorder(isColoredSurface = false),
+                        shadowElevation = 0.dp,
                         modifier = Modifier
                             .fillMaxWidth()
                             .animateItem()
+                            .kluddraCardShadow(
+                                elevation = if (darkTheme) 8.dp else 4.dp,
+                                shape = cardShape
+                            )
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             if (note.title.isNotBlank()) {

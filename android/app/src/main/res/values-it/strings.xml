@@ -125,7 +125,7 @@
     <string name="confirm_sign_out_title">Uscire?</string>
     <string name="confirm_sign_out_body">Le note locali su questo dispositivo saranno cancellate.</string>
     <string name="settings_app_version">Versione %1$s</string>
-    <string name="settings_privacy_note">Zero pubblicità, zero tracciamento, zero cloud esterni.</string>
+    <string name="settings_privacy_note">I tuoi dati. Il tuo dispositivo. Il tuo cloud personale.</string>
     <string name="sync_dialog_title">Stato sincronizzazione</string>
     <string name="sync_last_synced">Ultima sincronizzazione: %1$s</string>
     <string name="sync_never">Mai</string>
@@ -152,4 +152,23 @@
     <string name="sessions_revoked_others">Disconnessi %1$d altri dispositivi</string>
     <string name="sessions_load_failed">Impossibile caricare i dispositivi attivi</string>
     <string name="sessions_action_failed">Impossibile aggiornare i dispositivi attivi</string>
+    <string name="welcome_headline">Benvenuto in Kluddra</string>
+    <string name="welcome_subtitle">Note private e liste della spesa salvate sul tuo dispositivo, con sincronizzazione facoltativa verso il tuo server personale.</string>
+    <string name="action_start_local">Inizia in locale</string>
+    <string name="action_connect_server">Collega il tuo server</string>
+    <string name="welcome_later_hint">Puoi collegare il tuo server Kluddra in qualsiasi momento nelle Impostazioni.</string>
+    <string name="settings_local_mode_title">Modalità locale (solo questo dispositivo)</string>
+    <string name="settings_local_mode_desc">Le tue note e la lista della spesa restano private su questo dispositivo. Collega il tuo server Kluddra quando vuoi sincronizzare più dispositivi.</string>
+    <string name="confirm_sign_out_body_choice">Scegli se mantenere una copia locale su questo dispositivo o cancellare tutti i dati locali.</string>
+    <string name="action_sign_out_keep_local">Esci e mantieni in locale</string>
+    <string name="action_sign_out_clear_device">Esci e cancella dispositivo</string>
+    <string name="sort_notes">Ordina note</string>
+    <string name="sort_updated_desc">Ultima modifica</string>
+    <string name="sort_created_desc">Più recenti</string>
+    <string name="sort_created_asc">Meno recenti</string>
+    <string name="sort_title_asc">Titolo (A–Z)</string>
+    <string name="date_today_time">Oggi %1$s</string>
+    <string name="date_yesterday">Ieri</string>
+    <string name="editor_meta_edited_created">Modificata %1$s · Creata %2$s</string>
+    <string name="editor_meta_created">Creata %1$s</string>
 </resources>

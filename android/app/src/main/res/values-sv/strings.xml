@@ -125,7 +125,7 @@
     <string name="confirm_sign_out_title">Logga ut?</string>
     <string name="confirm_sign_out_body">Lokala anteckningar på den här enheten rensas. Kontrollera att allt är synkat först.</string>
     <string name="settings_app_version">Appversion %1$s</string>
-    <string name="settings_privacy_note">Ingen reklam, ingen spårning, inga externa molntjänster.</string>
+    <string name="settings_privacy_note">Din data. Din enhet. Ditt eget moln.</string>
     <string name="sync_dialog_title">Synkstatus</string>
     <string name="sync_last_synced">Senast synkad: %1$s</string>
     <string name="sync_never">Aldrig</string>
@@ -152,4 +152,23 @@
     <string name="sessions_revoked_others">Loggade ut %1$d andra enheter</string>
     <string name="sessions_load_failed">Kunde inte hämta aktiva enheter</string>
     <string name="sessions_action_failed">Kunde inte uppdatera aktiva enheter</string>
+    <string name="welcome_headline">Välkommen till Kluddra</string>
+    <string name="welcome_subtitle">Privata anteckningar och inköpslistor – sparade direkt på din enhet, med valfri synk till din egen server.</string>
+    <string name="action_start_local">Börja använda lokalt</string>
+    <string name="action_connect_server">Anslut egen server</string>
+    <string name="welcome_later_hint">Du kan ansluta din egen Kluddra-server när som helst i Inställningar.</string>
+    <string name="settings_local_mode_title">Lokalt läge (endast denna enhet)</string>
+    <string name="settings_local_mode_desc">Dina anteckningar och inköpslistan sparas privat på den här enheten. Anslut din egen Kluddra-server när du vill synka mellan flera enheter.</string>
+    <string name="confirm_sign_out_body_choice">Välj om du vill behålla en lokal kopia på den här enheten eller rensa all lokal data.</string>
+    <string name="action_sign_out_keep_local">Logga ut &amp; behåll lokalt</string>
+    <string name="action_sign_out_clear_device">Logga ut &amp; rensa enheten</string>
+    <string name="sort_notes">Sortera anteckningar</string>
+    <string name="sort_updated_desc">Senast ändrad</string>
+    <string name="sort_created_desc">Senast skapad</string>
+    <string name="sort_created_asc">Äldst först</string>
+    <string name="sort_title_asc">Titel (A–Ö)</string>
+    <string name="date_today_time">Idag %1$s</string>
+    <string name="date_yesterday">Igår</string>
+    <string name="editor_meta_edited_created">Ändrad %1$s · Skapad %2$s</string>
+    <string name="editor_meta_created">Skapad %1$s</string>
 </resources>

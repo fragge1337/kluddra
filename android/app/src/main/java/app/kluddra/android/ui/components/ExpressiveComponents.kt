@@ -55,7 +55,10 @@ import androidx.compose.material3.ripple
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,10 +67,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -77,7 +97,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.graphics.shapes.Morph
 import app.kluddra.android.R
 import app.kluddra.android.data.local.NoteEntity
 import app.kluddra.android.sync.SyncStateKind
@@ -85,53 +109,369 @@ import app.kluddra.android.sync.SyncStatus
 import app.kluddra.android.ui.notes.NoteBlockType
 import app.kluddra.android.ui.notes.NoteFormatting
 import app.kluddra.android.ui.theme.LocalKluddraDarkTheme
+import app.kluddra.android.ui.theme.LocalKluddraElevation
 import app.kluddra.android.ui.theme.LocalKluddraSemantics
 import app.kluddra.android.ui.theme.NoteColor
+import kotlin.math.cos
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlinx.coroutines.delay
 
 /**
- * Unified expressive circular (+) floating action button shared by both Notes and Shopping tabs
- * so primary creation actions align pixel-for-pixel with a crisp background cutout halo and
- * spring press physics.
+ * Reusable calibrated elevation shadow tuned to Kluddra's 5-layer Light and dimmed Dark palette.
  */
+@Composable
+fun Modifier.kluddraCardShadow(
+    elevation: Dp,
+    shape: Shape
+): Modifier {
+    val elev = LocalKluddraElevation.current
+    return this.shadow(
+        elevation = elevation,
+        shape = shape,
+        ambientColor = elev.cardAmbientShadow,
+        spotColor = elev.cardSpotShadow,
+        clip = false
+    )
+}
+
+private val NoteCardShape = RoundedCornerShape(28.dp)
+
+/**
+ * Browser-style scroll-collapsible top bar controller used in compact-height phone landscape
+ * so scrolling down smoothly collapses the header out of the way and scrolling up reveals it
+ * immediately, reclaiming maximum vertical viewport height.
+ */
+@Stable
+class CollapsibleTopBarState(
+    enabled: Boolean
+) {
+    var enabled by mutableStateOf(enabled)
+    var heightPx by mutableFloatStateOf(0f)
+    var offsetPx by mutableFloatStateOf(0f)
+
+    fun expand() {
+        offsetPx = 0f
+    }
+
+    val nestedScrollConnection: NestedScrollConnection = object : NestedScrollConnection {
+        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+            if (!enabled || heightPx <= 0f) return Offset.Zero
+            val delta = available.y
+            val newOffset = (offsetPx + delta).coerceIn(-heightPx, 0f)
+            val consumed = newOffset - offsetPx
+            offsetPx = newOffset
+            return Offset(0f, consumed)
+        }
+    }
+}
+
+@Composable
+fun rememberCollapsibleTopBarState(enabled: Boolean): CollapsibleTopBarState {
+    val state = remember { CollapsibleTopBarState(enabled) }
+    LaunchedEffect(enabled) {
+        state.enabled = enabled
+        if (!enabled) {
+            state.expand()
+        }
+    }
+    return state
+}
+
+fun Modifier.collapsibleTopBar(state: CollapsibleTopBarState): Modifier =
+    this
+        .clipToBounds()
+        .layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints)
+            val fullHeight = placeable.height
+            if (state.heightPx != fullHeight.toFloat()) {
+                state.heightPx = fullHeight.toFloat()
+                state.offsetPx = if (state.enabled) {
+                    state.offsetPx.coerceIn(-fullHeight.toFloat(), 0f)
+                } else {
+                    0f
+                }
+            }
+            val effectiveOffset = if (state.enabled) state.offsetPx else 0f
+            val visibleHeight = (fullHeight + effectiveOffset.roundToInt()).coerceAtLeast(0)
+            layout(placeable.width, visibleHeight) {
+                placeable.placeRelative(0, effectiveOffset.roundToInt())
+            }
+        }
+
+/**
+ * Tactile vertical-bevel border for raised surfaces (Z+1 .. Z+3): soft light catch along the top
+ * rim transitioning smoothly into a grounded bottom edge. Memoized per theme/surface parameters
+ * to avoid per-recomposition Brush allocations during fast scrolling.
+ */
+@Composable
+fun kluddraRaisedBorder(
+    isColoredSurface: Boolean = false
+): BorderStroke {
+    val darkTheme = LocalKluddraDarkTheme.current
+    val elev = LocalKluddraElevation.current
+    val outlineVariant = MaterialTheme.colorScheme.outlineVariant
+    return remember(darkTheme, isColoredSurface, elev, outlineVariant) {
+        if (isColoredSurface) {
+            BorderStroke(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = if (darkTheme) 0.34f else 0.62f),
+                    0.30f to Color.Transparent,
+                    1f to Color.Black.copy(alpha = if (darkTheme) 0.24f else 0.08f)
+                )
+            )
+        } else {
+            BorderStroke(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    0f to elev.cardTopHighlight,
+                    0.28f to outlineVariant.copy(alpha = if (darkTheme) 0.48f else 0.44f),
+                    1f to elev.cardBottomEdge
+                )
+            )
+        }
+    }
+}
+
+/**
+ * Inverted bevel border for recessed Z-1 wells (Pinned tray, resting inline add row):
+ * darker upper rim where light is blocked + soft lower edge catching ambient light.
+ */
+@Composable
+fun kluddraRecessedBorder(): BorderStroke {
+    val darkTheme = LocalKluddraDarkTheme.current
+    val elev = LocalKluddraElevation.current
+    val outlineVariant = MaterialTheme.colorScheme.outlineVariant
+    return remember(darkTheme, elev, outlineVariant) {
+        BorderStroke(
+            width = 1.dp,
+            brush = Brush.verticalGradient(
+                0f to elev.recessedInnerShadow.copy(alpha = if (darkTheme) 0.55f else 0.24f),
+                0.35f to outlineVariant.copy(alpha = if (darkTheme) 0.32f else 0.45f),
+                1f to elev.recessedBottomCatch
+            )
+        )
+    }
+}
+
+/**
+ * Soft inner top-shadow lip inside recessed Z-1 trays so cards inside visibly sit above them.
+ */
+@Composable
+fun Modifier.kluddraRecessedInnerShadow(shape: Shape): Modifier {
+    val elev = LocalKluddraElevation.current
+    return this
+        .clip(shape)
+        .drawWithContent {
+            drawContent()
+            drawRect(
+                brush = Brush.verticalGradient(
+                    0f to elev.recessedInnerShadow,
+                    1f to Color.Transparent,
+                    startY = 0f,
+                    endY = 9.dp.toPx()
+                ),
+                size = Size(size.width, 9.dp.toPx())
+            )
+        }
+}
+
+private class MorphPolygonShape(
+    private val morph: Morph,
+    private val progress: Float,
+    private val rotationDegrees: Float
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        val path = Path()
+        val w = size.width
+        val h = size.height
+        val rad = Math.toRadians(rotationDegrees.toDouble())
+        val cosA = cos(rad).toFloat()
+        val sinA = sin(rad).toFloat()
+
+        fun rx(nx: Float, ny: Float): Float {
+            val dx = nx - 0.5f
+            val dy = ny - 0.5f
+            return (0.5f + dx * cosA - dy * sinA) * w
+        }
+
+        fun ry(nx: Float, ny: Float): Float {
+            val dx = nx - 0.5f
+            val dy = ny - 0.5f
+            return (0.5f + dx * sinA + dy * cosA) * h
+        }
+
+        var first = true
+        morph.forEachCubic(progress.coerceIn(0f, 1f)) { cubic ->
+            if (first) {
+                path.moveTo(rx(cubic.anchor0X, cubic.anchor0Y), ry(cubic.anchor0X, cubic.anchor0Y))
+                first = false
+            }
+            path.cubicTo(
+                rx(cubic.control0X, cubic.control0Y), ry(cubic.control0X, cubic.control0Y),
+                rx(cubic.control1X, cubic.control1Y), ry(cubic.control1X, cubic.control1Y),
+                rx(cubic.anchor1X, cubic.anchor1Y), ry(cubic.anchor1X, cubic.anchor1Y)
+            )
+        }
+        path.close()
+        return Outline.Generic(path)
+    }
+}
+
+/**
+ * Material 3 Expressive scalloped Cookie-to-Circle morphing (+) floating action button.
+ * Rests in a tactile 9-petal MaterialShapes.Cookie9Sided silhouette, morphs smoothly into a circle
+ * with a playful spring press + 90-degree (+) spin on tap, and casts a true contour-following
+ * multi-layer drop shadow with a subtle top light catch.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun KluddraAddFab(
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val darkTheme = LocalKluddraDarkTheme.current
+    val elev = LocalKluddraElevation.current
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.91f else 1f,
-        animationSpec = spring(dampingRatio = 0.55f, stiffness = 700f),
-        label = "kluddra_add_fab_scale"
+
+    var entered by remember { mutableStateOf(false) }
+    var spinClicks by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { entered = true }
+
+    val entryScale by animateFloatAsState(
+        targetValue = if (entered) 1f else 0.78f,
+        animationSpec = spring(dampingRatio = 0.56f, stiffness = 360f),
+        label = "kluddra_fab_entry_scale"
     )
-    Surface(
-        onClick = {
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            onClick()
-        },
-        interactionSource = interactionSource,
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary,
-        contentColor = MaterialTheme.colorScheme.onPrimary,
-        border = BorderStroke(2.5.dp, MaterialTheme.colorScheme.background),
-        shadowElevation = 10.dp,
+    val entryRotation by animateFloatAsState(
+        targetValue = if (entered) 0f else -20f,
+        animationSpec = spring(dampingRatio = 0.62f, stiffness = 320f),
+        label = "kluddra_fab_entry_rot"
+    )
+    val morphProgress by animateFloatAsState(
+        targetValue = if (pressed) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.50f, stiffness = 420f),
+        label = "kluddra_fab_morph"
+    )
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.91f else 1f,
+        animationSpec = spring(dampingRatio = 0.48f, stiffness = 560f),
+        label = "kluddra_fab_press_scale"
+    )
+    val petalRotation by animateFloatAsState(
+        targetValue = if (pressed) 22f else 0f,
+        animationSpec = spring(dampingRatio = 0.52f, stiffness = 380f),
+        label = "kluddra_fab_petal_rot"
+    )
+    val iconRotation by animateFloatAsState(
+        targetValue = (spinClicks * 90f) + if (pressed) 45f else 0f,
+        animationSpec = spring(dampingRatio = 0.44f, stiffness = 380f),
+        label = "kluddra_fab_icon_rot"
+    )
+
+    val cookieToCircleMorph = remember {
+        Morph(
+            start = MaterialShapes.Cookie9Sided.normalized(),
+            end = MaterialShapes.Circle.normalized()
+        )
+    }
+    val combinedRotation = entryRotation + petalRotation
+    val fabShape = remember(cookieToCircleMorph, morphProgress, combinedRotation) {
+        MorphPolygonShape(
+            morph = cookieToCircleMorph,
+            progress = morphProgress,
+            rotationDegrees = combinedRotation
+        )
+    }
+
+    val containerColor = MaterialTheme.colorScheme.primary
+    val ambientPaint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG) }
+    val keyPaint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG) }
+    val combinedScale = entryScale * pressScale
+
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = modifier
-            .size(64.dp)
+            .size(66.dp)
             .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+                scaleX = combinedScale
+                scaleY = combinedScale
+            }
+            .drawBehind {
+                val outline = fabShape.createOutline(size, layoutDirection, this)
+                if (outline is Outline.Generic) {
+                    val androidPath = outline.path.asAndroidPath()
+                    drawIntoCanvas { canvas ->
+                        ambientPaint.color = containerColor.toArgb()
+                        ambientPaint.setShadowLayer(
+                            if (pressed) 10.dp.toPx() else 16.dp.toPx(),
+                            0f,
+                            if (pressed) 3.dp.toPx() else 6.dp.toPx(),
+                            elev.fabAmbientShadow.toArgb()
+                        )
+                        canvas.nativeCanvas.drawPath(androidPath, ambientPaint)
+
+                        keyPaint.color = containerColor.toArgb()
+                        keyPaint.setShadowLayer(
+                            if (pressed) 4.dp.toPx() else 6.dp.toPx(),
+                            0f,
+                            if (pressed) 1.5.dp.toPx() else 3.dp.toPx(),
+                            elev.fabKeyShadow.toArgb()
+                        )
+                        canvas.nativeCanvas.drawPath(androidPath, keyPaint)
+                    }
+                }
             }
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = contentDescription,
-                modifier = Modifier.size(30.dp)
-            )
+        Surface(
+            onClick = {
+                spinClicks++
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
+            interactionSource = interactionSource,
+            shape = fabShape,
+            color = containerColor,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            border = BorderStroke(
+                width = 1.25.dp,
+                brush = Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = if (darkTheme) 0.42f else 0.34f),
+                    0.45f to Color.Transparent,
+                    1f to Color.Black.copy(alpha = if (darkTheme) 0.24f else 0.16f)
+                )
+            ),
+            shadowElevation = 0.dp,
+            modifier = Modifier.size(66.dp)
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.background(
+                    Brush.verticalGradient(
+                        0f to Color.White.copy(alpha = if (darkTheme) 0.16f else 0.18f),
+                        0.55f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = if (darkTheme) 0.08f else 0.06f)
+                    )
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = contentDescription,
+                    modifier = Modifier
+                        .size(30.dp)
+                        .graphicsLayer {
+                            rotationZ = iconRotation
+                        }
+                )
+            }
         }
     }
 }
@@ -150,6 +490,7 @@ fun KluddraPullToRefreshBox(
     isScrollInProgress: Boolean,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     content: @Composable BoxScope.() -> Unit
 ) {
     val pullState = rememberPullToRefreshState()
@@ -165,19 +506,21 @@ fun KluddraPullToRefreshBox(
 
     Box(
         modifier = modifier.pullToRefresh(
-            isRefreshing = isRefreshing,
+            isRefreshing = enabled && isRefreshing,
             state = pullState,
-            enabled = armedAtTop && isAtTop,
+            enabled = enabled && armedAtTop && isAtTop,
             threshold = 112.dp,
             onRefresh = onRefresh
         )
     ) {
         content()
-        PullToRefreshDefaults.Indicator(
-            state = pullState,
-            isRefreshing = isRefreshing,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
+        if (enabled) {
+            PullToRefreshDefaults.Indicator(
+                state = pullState,
+                isRefreshing = isRefreshing,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+        }
     }
 }
 
@@ -527,12 +870,14 @@ fun CircularHeaderButton(
                 MaterialTheme.colorScheme.onSurface
             },
             shape = CircleShape,
-            border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (darkTheme) 0.55f else 0.45f)
-            ),
-            shadowElevation = if (darkTheme) 5.dp else 2.dp,
-            modifier = Modifier.size(40.dp)
+            border = kluddraRaisedBorder(isColoredSurface = highlighted),
+            shadowElevation = 0.dp,
+            modifier = Modifier
+                .size(40.dp)
+                .kluddraCardShadow(
+                    elevation = if (darkTheme) 7.dp else 4.dp,
+                    shape = CircleShape
+                )
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
@@ -562,6 +907,7 @@ fun NoteCard(
     note: NoteEntity,
     isSelected: Boolean,
     isCompactGrid: Boolean = true,
+    dateLabel: String = "",
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -582,13 +928,11 @@ fun NoteCard(
         label = "note_card_press_scale"
     )
 
-    val shape = RoundedCornerShape(28.dp)
+    val shape = NoteCardShape
     val border = when {
         isSelected -> BorderStroke(2.5.dp, MaterialTheme.colorScheme.primary)
-        palette == NoteColor.NEUTRAL && darkTheme -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
-        palette == NoteColor.NEUTRAL && !darkTheme -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-        darkTheme -> BorderStroke(1.dp, Color.White.copy(alpha = 0.14f))
-        else -> BorderStroke(0.5.dp, Color.Black.copy(alpha = 0.06f))
+        palette == NoteColor.NEUTRAL -> kluddraRaisedBorder(isColoredSurface = false)
+        else -> kluddraRaisedBorder(isColoredSurface = true)
     }
 
     // Dynamic height driven by actual note length: short notes stay compact, longer notes grow naturally tall!
@@ -596,14 +940,27 @@ fun NoteCard(
     val maxParagraphLines = if (isCompactGrid) 10 else 5
     val minCardHeight = 72.dp
 
-    val previewBlocks = NoteFormatting.parseBlocks(note.body)
-        .filter { it.text.isNotBlank() || it.type != NoteBlockType.PARAGRAPH }
-        .take(maxPreviewBlocks)
+    // Fast-path memoized preview parsing: stops scanning after maxPreviewBlocks and pre-renders
+    // inline bold once per (body, maxPreviewBlocks) instead of running regexes on every scroll frame.
+    val previewBlocks = remember(note.body, maxPreviewBlocks) {
+        NoteFormatting.parsePreviewBlocks(note.body, maxPreviewBlocks)
+    }
 
-    val cardDescription = buildString {
-        if (note.title.isNotBlank()) append(note.title) else append(NoteFormatting.autoGenerateTitle(note.body))
-        if (note.isPinned) append(", pinned")
-        if (note.isReadOnly) append(", write-protected")
+    val cardDescription = remember(note.title, note.body, note.isPinned, note.isReadOnly) {
+        buildString {
+            if (note.title.isNotBlank()) append(note.title) else append(NoteFormatting.autoGenerateTitle(note.body))
+            if (note.isPinned) append(", pinned")
+            if (note.isReadOnly) append(", write-protected")
+        }
+    }
+
+    val scaleModifier = if (pressScale != 1f) {
+        Modifier.graphicsLayer {
+            scaleX = pressScale
+            scaleY = pressScale
+        }
+    } else {
+        Modifier
     }
 
     Surface(
@@ -612,13 +969,14 @@ fun NoteCard(
         shape = shape,
         border = border,
         tonalElevation = 0.dp,
-        shadowElevation = if (darkTheme) 7.dp else 2.5.dp,
+        shadowElevation = 0.dp,
         modifier = modifier
             .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-            }
+            .then(scaleModifier)
+            .kluddraCardShadow(
+                elevation = if (darkTheme) 9.dp else 5.dp,
+                shape = shape
+            )
             .clip(shape)
             .semantics { contentDescription = cardDescription }
             .combinedClickable(
@@ -702,11 +1060,9 @@ fun NoteCard(
 
             if (previewBlocks.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    var num = 0
                     previewBlocks.forEach { block ->
                         when (block.type) {
                             NoteBlockType.CHECKBOX -> {
-                                num = 0
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -722,7 +1078,7 @@ fun NoteCard(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Text(
-                                        text = NoteFormatting.renderInlineBold(block.text),
+                                        text = block.renderedText,
                                         style = MaterialTheme.typography.bodyMedium.copy(
                                             textDecoration = if (block.isChecked) TextDecoration.LineThrough else TextDecoration.None
                                         ),
@@ -733,15 +1089,14 @@ fun NoteCard(
                                 }
                             }
                             NoteBlockType.NUMBERED -> {
-                                num++
                                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                                     Text(
-                                        text = "$num.",
+                                        text = "${block.ordinal}.",
                                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                         color = contentColor
                                     )
                                     Text(
-                                        text = NoteFormatting.renderInlineBold(block.text),
+                                        text = block.renderedText,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = secondaryColor,
                                         maxLines = 2,
@@ -750,9 +1105,8 @@ fun NoteCard(
                                 }
                             }
                             NoteBlockType.PARAGRAPH -> {
-                                num = 0
                                 Text(
-                                    text = NoteFormatting.renderInlineBold(block.text),
+                                    text = block.renderedText,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = if (note.title.isBlank()) contentColor else secondaryColor,
                                     maxLines = maxParagraphLines,
@@ -777,6 +1131,17 @@ fun NoteCard(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }
+            }
+
+            if (dateLabel.isNotBlank()) {
+                Text(
+                    text = dateLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = secondaryColor.copy(alpha = 0.76f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
             }
         }
     }

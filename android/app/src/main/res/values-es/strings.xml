@@ -125,7 +125,7 @@
     <string name="confirm_sign_out_title">¿Cerrar sesión?</string>
     <string name="confirm_sign_out_body">Se borrarán las notas locales del dispositivo. Asegúrate de haber sincronizado.</string>
     <string name="settings_app_version">Versión %1$s</string>
-    <string name="settings_privacy_note">Sin anuncios, sin rastreo, sin nubes externas.</string>
+    <string name="settings_privacy_note">Tus datos. Tu dispositivo. Tu propia nube.</string>
     <string name="sync_dialog_title">Estado de sincronización</string>
     <string name="sync_last_synced">Última sincronización: %1$s</string>
     <string name="sync_never">Nunca</string>
@@ -152,4 +152,23 @@
     <string name="sessions_revoked_others">Se cerró la sesión en %1$d dispositivo(s)</string>
     <string name="sessions_load_failed">No se pudieron cargar los dispositivos activos</string>
     <string name="sessions_action_failed">No se pudieron actualizar los dispositivos activos</string>
+    <string name="welcome_headline">Te damos la bienvenida a Kluddra</string>
+    <string name="welcome_subtitle">Notas privadas y listas de la compra guardadas en tu dispositivo, con sincronización opcional con tu propio servidor.</string>
+    <string name="action_start_local">Usar en local</string>
+    <string name="action_connect_server">Conectar tu propio servidor</string>
+    <string name="welcome_later_hint">Puedes conectar tu propio servidor Kluddra cuando quieras en Ajustes.</string>
+    <string name="settings_local_mode_title">Modo local (solo este dispositivo)</string>
+    <string name="settings_local_mode_desc">Tus notas y tu lista de la compra se guardan de forma privada en este dispositivo. Conecta tu propio servidor Kluddra cuando quieras sincronizar entre dispositivos.</string>
+    <string name="confirm_sign_out_body_choice">Elige si quieres conservar una copia local en este dispositivo o borrar todos los datos locales.</string>
+    <string name="action_sign_out_keep_local">Cerrar sesión y conservar en local</string>
+    <string name="action_sign_out_clear_device">Cerrar sesión y borrar dispositivo</string>
+    <string name="sort_notes">Ordenar notas</string>
+    <string name="sort_updated_desc">Última edición</string>
+    <string name="sort_created_desc">Más recientes</string>
+    <string name="sort_created_asc">Más antiguas</string>
+    <string name="sort_title_asc">Título (A–Z)</string>
+    <string name="date_today_time">Hoy %1$s</string>
+    <string name="date_yesterday">Ayer</string>
+    <string name="editor_meta_edited_created">Editada %1$s · Creada %2$s</string>
+    <string name="editor_meta_created">Creada %1$s</string>
 </resources>

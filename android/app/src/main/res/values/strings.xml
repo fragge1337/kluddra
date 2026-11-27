@@ -133,7 +133,7 @@
     <string name="confirm_sign_out_title">Sign out?</string>
     <string name="confirm_sign_out_body">Local notes on this device will be cleared. Make sure all changes are synced first.</string>
     <string name="settings_app_version">App version %1$s</string>
-    <string name="settings_privacy_note">Zero ads, zero tracking, zero external cloud services.</string>
+    <string name="settings_privacy_note">Your data. Your device. Your own cloud.</string>
     <string name="sync_dialog_title">Sync status</string>
     <string name="sync_last_synced">Last synced: %1$s</string>
     <string name="sync_never">Never</string>
@@ -160,4 +160,23 @@
     <string name="sessions_revoked_others">Signed out %1$d other device(s)</string>
     <string name="sessions_load_failed">Could not load active devices</string>
     <string name="sessions_action_failed">Could not update active devices</string>
+    <string name="welcome_headline">Welcome to Kluddra</string>
+    <string name="welcome_subtitle">Private notes and shopping lists — stored right on your device, with optional sync to your own server.</string>
+    <string name="action_start_local">Start using locally</string>
+    <string name="action_connect_server">Connect your own server</string>
+    <string name="welcome_later_hint">You can connect a self-hosted Kluddra server anytime in Settings.</string>
+    <string name="settings_local_mode_title">Local mode (this device only)</string>
+    <string name="settings_local_mode_desc">Your notes and shopping list stay privately on this device. Connect your own Kluddra server whenever you want to sync across devices.</string>
+    <string name="confirm_sign_out_body_choice">Choose whether to keep a local copy on this device or clear all local data.</string>
+    <string name="action_sign_out_keep_local">Sign out &amp; keep locally</string>
+    <string name="action_sign_out_clear_device">Sign out &amp; clear device</string>
+    <string name="sort_notes">Sort notes</string>
+    <string name="sort_updated_desc">Last edited</string>
+    <string name="sort_created_desc">Newest created</string>
+    <string name="sort_created_asc">Oldest created</string>
+    <string name="sort_title_asc">Title (A–Z)</string>
+    <string name="date_today_time">Today %1$s</string>
+    <string name="date_yesterday">Yesterday</string>
+    <string name="editor_meta_edited_created">Edited %1$s · Created %2$s</string>
+    <string name="editor_meta_created">Created %1$s</string>
 </resources>

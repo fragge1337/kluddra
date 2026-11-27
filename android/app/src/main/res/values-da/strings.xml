@@ -125,7 +125,7 @@
     <string name="confirm_sign_out_title">Log ud?</string>
     <string name="confirm_sign_out_body">Lokale noter på denne enhed ryddes.</string>
     <string name="settings_app_version">Appversion %1$s</string>
-    <string name="settings_privacy_note">Ingen reklamer, ingen sporing, ingen eksterne skytjenester.</string>
+    <string name="settings_privacy_note">Dine data. Din enhed. Din egen sky.</string>
     <string name="sync_dialog_title">Synkstatus</string>
     <string name="sync_last_synced">Sidst synkroniseret: %1$s</string>
     <string name="sync_never">Aldrig</string>
@@ -152,4 +152,23 @@
     <string name="sessions_revoked_others">Loggede %1$d andre enheder ud</string>
     <string name="sessions_load_failed">Kunne ikke hente aktive enheder</string>
     <string name="sessions_action_failed">Kunne ikke opdatere aktive enheder</string>
+    <string name="welcome_headline">Velkommen til Kluddra</string>
+    <string name="welcome_subtitle">Private noter og indkøbslister – gemt direkte på din enhed, med valgfri synkronisering til din egen server.</string>
+    <string name="action_start_local">Start lokalt</string>
+    <string name="action_connect_server">Forbind egen server</string>
+    <string name="welcome_later_hint">Du kan til enhver tid forbinde din egen Kluddra-server under Indstillinger.</string>
+    <string name="settings_local_mode_title">Lokal tilstand (kun denne enhed)</string>
+    <string name="settings_local_mode_desc">Dine noter og indkøbsliste gemmes privat på denne enhed. Forbind din egen Kluddra-server, når du vil synkronisere mellem enheder.</string>
+    <string name="confirm_sign_out_body_choice">Vælg, om du vil beholde en lokal kopi på denne enhed eller rydde alle lokale data.</string>
+    <string name="action_sign_out_keep_local">Log ud og behold lokalt</string>
+    <string name="action_sign_out_clear_device">Log ud og ryd enheden</string>
+    <string name="sort_notes">Sorter noter</string>
+    <string name="sort_updated_desc">Senest redigeret</string>
+    <string name="sort_created_desc">Nyeste først</string>
+    <string name="sort_created_asc">Ældste først</string>
+    <string name="sort_title_asc">Titel (A–Å)</string>
+    <string name="date_today_time">I dag %1$s</string>
+    <string name="date_yesterday">I går</string>
+    <string name="editor_meta_edited_created">Redigeret %1$s · Oprettet %2$s</string>
+    <string name="editor_meta_created">Oprettet %1$s</string>
 </resources>

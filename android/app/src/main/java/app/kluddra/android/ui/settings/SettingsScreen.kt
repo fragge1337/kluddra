@@ -11,11 +11,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -78,6 +86,8 @@ import app.kluddra.android.BuildConfig
 import app.kluddra.android.R
 import app.kluddra.android.data.prefs.ThemeMode
 import app.kluddra.android.sync.SyncStateKind
+import app.kluddra.android.ui.components.kluddraCardShadow
+import app.kluddra.android.ui.components.kluddraRaisedBorder
 import app.kluddra.android.ui.components.rememberRelativeLastSyncedText
 import app.kluddra.android.ui.theme.LocalKluddraDarkTheme
 import app.kluddra.android.ui.theme.LocalKluddraSemantics
@@ -92,13 +102,14 @@ fun SettingsScreen(
     onThemeModeChange: (ThemeMode) -> Unit,
     onDynamicColorChange: (Boolean) -> Unit,
     onSyncNow: () -> Unit,
+    onConnectServer: () -> Unit,
     onRefreshSessions: () -> Unit,
     onRevokeSession: (String, (Boolean) -> Unit) -> Unit,
     onRevokeOtherSessions: ((Int?) -> Unit) -> Unit,
     onOpenTrash: () -> Unit,
     onExportJson: (OutputStream, (Boolean) -> Unit) -> Unit,
     onExportMarkdownZip: (OutputStream, (Boolean) -> Unit) -> Unit,
-    onSignOut: () -> Unit,
+    onSignOut: (Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -152,9 +163,12 @@ fun SettingsScreen(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.systemBars,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets.statusBars.only(WindowInsetsSides.Top)
+                    .union(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal)),
                 title = { Text(stringResource(R.string.nav_settings)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -178,8 +192,46 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Section 1: Server & Sync
+            // Section 1: Server & Sync (or Local-only mode with optional server connection)
             item(key = "section_server") {
+                if (!state.settings.isSignedIn) {
+                    SettingsGroupCard(title = stringResource(R.string.settings_section_server)) {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.settings_local_mode_title)) },
+                            supportingContent = { Text(stringResource(R.string.settings_local_mode_desc)) },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Smartphone,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            colors = settingsItemColors()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)
+                        ) {
+                            FilledTonalButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onConnectServer()
+                                },
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Cloud,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.action_connect_server))
+                            }
+                        }
+                    }
+                } else {
                 val isSyncError = state.syncStatus.kind == SyncStateKind.ERROR ||
                     state.syncStatus.kind == SyncStateKind.AUTH_EXPIRED
                 val isHealthySync = state.syncStatus.kind == SyncStateKind.IDLE &&
@@ -369,6 +421,7 @@ fun SettingsScreen(
                         colors = settingsItemColors(),
                         modifier = Modifier.clickable { showSignOutConfirm = true }
                     )
+                }
                 }
             }
 
@@ -732,20 +785,35 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showSignOutConfirm = false },
             title = { Text(stringResource(R.string.confirm_sign_out_title)) },
-            text = { Text(stringResource(R.string.confirm_sign_out_body)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showSignOutConfirm = false
-                        onSignOut()
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(stringResource(R.string.confirm_sign_out_body_choice))
+                    Spacer(modifier = Modifier.height(2.dp))
+                    FilledTonalButton(
+                        onClick = {
+                            showSignOutConfirm = false
+                            onSignOut(true)
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.action_sign_out_keep_local))
                     }
-                ) {
-                    Text(
-                        text = stringResource(R.string.settings_sign_out),
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    TextButton(
+                        onClick = {
+                            showSignOutConfirm = false
+                            onSignOut(false)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = stringResource(R.string.action_sign_out_clear_device),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             },
+            confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showSignOutConfirm = false }) {
                     Text(stringResource(R.string.action_cancel))
@@ -763,8 +831,8 @@ private fun SettingsGroupCard(
     val darkTheme = LocalKluddraDarkTheme.current
     Column(
         modifier = Modifier
-            .fillMaxWidth()
             .widthIn(max = 640.dp)
+            .fillMaxWidth()
     ) {
         Text(
             text = title.uppercase(),
@@ -772,15 +840,18 @@ private fun SettingsGroupCard(
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(start = 14.dp, bottom = 8.dp)
         )
+        val cardShape = RoundedCornerShape(28.dp)
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerLow,
-            shape = RoundedCornerShape(28.dp),
-            border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (darkTheme) 0.55f else 0.55f)
-            ),
-            shadowElevation = if (darkTheme) 6.dp else 2.dp,
-            modifier = Modifier.fillMaxWidth()
+            shape = cardShape,
+            border = kluddraRaisedBorder(isColoredSurface = false),
+            shadowElevation = 0.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .kluddraCardShadow(
+                    elevation = if (darkTheme) 8.dp else 4.dp,
+                    shape = cardShape
+                )
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 content()

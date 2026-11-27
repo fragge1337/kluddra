@@ -1,10 +1,12 @@
 package app.kluddra.android.sync
 
+import androidx.compose.runtime.Immutable
 import androidx.room.withTransaction
 import app.kluddra.android.data.local.KluddraDatabase
 import app.kluddra.android.data.local.NoteEntity
 import app.kluddra.android.data.local.ShoppingItemEntity
 import app.kluddra.android.data.local.SyncMetadataEntity
+import app.kluddra.android.data.prefs.KluddraPreferences
 import app.kluddra.android.data.remote.ApiException
 import app.kluddra.android.data.remote.AuthExpiredException
 import app.kluddra.android.data.remote.KluddraApiClient
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
@@ -29,6 +32,7 @@ enum class SyncStateKind {
     AUTH_EXPIRED
 }
 
+@Immutable
 data class SyncStatus(
     val kind: SyncStateKind = SyncStateKind.IDLE,
     val lastSyncAt: Long? = null,
@@ -40,11 +44,16 @@ data class SyncStatus(
 
 class SyncEngine(
     private val db: KluddraDatabase,
-    private val api: KluddraApiClient
+    private val api: KluddraApiClient,
+    private val preferences: KluddraPreferences
 ) {
     private val syncMutex = Mutex()
     private val _status = MutableStateFlow(SyncStatus())
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
+
+    fun resetStatus() {
+        _status.value = SyncStatus(SyncStateKind.IDLE)
+    }
 
     /**
      * Live sync state enriched with persisted lastSyncAt and server version compatibility
@@ -59,13 +68,19 @@ class SyncEngine(
             isServerOutdated = check.isOutdated,
             minRecommendedServerVersion = check.minRecommendedVersion
         )
-    }
+    }.distinctUntilChanged()
 
     /**
      * Executes an atomic Push (outbox) followed by paginated Pull (delta by server_seq).
      * Safe to call concurrently or interrupt at any point; all mutations are idempotent.
      */
     suspend fun syncNow(): Boolean = syncMutex.withLock {
+        // Local-only mode: no server configured, stay completely quiet and offline.
+        if (preferences.getCredentials() == null) {
+            _status.value = SyncStatus(SyncStateKind.IDLE)
+            return true
+        }
+
         val syncDao = db.syncDao()
         val prevMeta = syncDao.getMetadata()
         _status.value = SyncStatus(SyncStateKind.SYNCING, lastSyncAt = prevMeta?.lastSyncAt)

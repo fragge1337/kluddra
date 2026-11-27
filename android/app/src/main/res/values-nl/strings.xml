@@ -125,7 +125,7 @@
     <string name="confirm_sign_out_title">Uitloggen?</string>
     <string name="confirm_sign_out_body">Lokale notities op dit apparaat worden gewist.</string>
     <string name="settings_app_version">Versie %1$s</string>
-    <string name="settings_privacy_note">Geen reclame, geen tracking, geen externe cloud.</string>
+    <string name="settings_privacy_note">Jouw gegevens. Jouw apparaat. Jouw eigen cloud.</string>
     <string name="sync_dialog_title">Sync-status</string>
     <string name="sync_last_synced">Laatst gesynchroniseerd: %1$s</string>
     <string name="sync_never">Nooit</string>
@@ -152,4 +152,23 @@
     <string name="sessions_revoked_others">%1$d andere apparaten uitgelogd</string>
     <string name="sessions_load_failed">Kan actieve apparaten niet laden</string>
     <string name="sessions_action_failed">Kan actieve apparaten niet bijwerken</string>
+    <string name="welcome_headline">Welkom bij Kluddra</string>
+    <string name="welcome_subtitle">Privénotities en boodschappenlijsten op je eigen apparaat, met optionele synchronisatie naar je eigen server.</string>
+    <string name="action_start_local">Lokaal starten</string>
+    <string name="action_connect_server">Eigen server verbinden</string>
+    <string name="welcome_later_hint">Je kunt op elk moment een eigen Kluddra-server verbinden via Instellingen.</string>
+    <string name="settings_local_mode_title">Lokale modus (alleen dit apparaat)</string>
+    <string name="settings_local_mode_desc">Je notities en boodschappenlijst blijven privé op dit apparaat. Verbind je eigen Kluddra-server zodra je tussen apparaten wilt synchroniseren.</string>
+    <string name="confirm_sign_out_body_choice">Kies of je een lokale kopie op dit apparaat wilt bewaren of alle lokale gegevens wilt wissen.</string>
+    <string name="action_sign_out_keep_local">Uitloggen en lokaal bewaren</string>
+    <string name="action_sign_out_clear_device">Uitloggen en apparaat wissen</string>
+    <string name="sort_notes">Notities sorteren</string>
+    <string name="sort_updated_desc">Laatst bewerkt</string>
+    <string name="sort_created_desc">Nieuwste eerst</string>
+    <string name="sort_created_asc">Oudste eerst</string>
+    <string name="sort_title_asc">Titel (A–Z)</string>
+    <string name="date_today_time">Vandaag %1$s</string>
+    <string name="date_yesterday">Gisteren</string>
+    <string name="editor_meta_edited_created">Bewerkt %1$s · Gemaakt %2$s</string>
+    <string name="editor_meta_created">Gemaakt %1$s</string>
 </resources>

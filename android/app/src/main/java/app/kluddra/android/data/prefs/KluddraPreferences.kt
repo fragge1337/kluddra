@@ -21,16 +21,28 @@ enum class NotesLayoutMode {
     GRID, LIST
 }
 
+enum class NotesSortOrder {
+    UPDATED_DESC,
+    CREATED_DESC,
+    CREATED_ASC,
+    TITLE_ASC
+}
+
 data class UserSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val useDynamicColor: Boolean = false,
     val notesLayoutMode: NotesLayoutMode = NotesLayoutMode.GRID,
+    val notesSortOrder: NotesSortOrder = NotesSortOrder.UPDATED_DESC,
     val serverUrl: String = "",
     val allowLocalHttp: Boolean = false,
     val username: String = "",
     val sessionId: String = "",
-    val isSignedIn: Boolean = false
-)
+    val isSignedIn: Boolean = false,
+    val isLocalOnly: Boolean = false
+) {
+    val hasCompletedOnboarding: Boolean
+        get() = isSignedIn || isLocalOnly
+}
 
 data class AuthCredentials(
     val serverUrl: String,
@@ -52,19 +64,37 @@ class KluddraPreferences(
             ?: ThemeMode.SYSTEM
         val layout = prefs[KEY_NOTES_LAYOUT]?.let { runCatching { NotesLayoutMode.valueOf(it) }.getOrNull() }
             ?: NotesLayoutMode.GRID
+        val sortOrder = prefs[KEY_NOTES_SORT_ORDER]?.let { runCatching { NotesSortOrder.valueOf(it) }.getOrNull() }
+            ?: NotesSortOrder.UPDATED_DESC
         val serverUrl = prefs[KEY_SERVER_URL].orEmpty()
         val hasRefresh = !prefs[KEY_ENC_REFRESH_TOKEN].isNullOrBlank()
+        val signedIn = serverUrl.isNotBlank() && hasRefresh
 
         UserSettings(
             themeMode = theme,
             useDynamicColor = prefs[KEY_DYNAMIC_COLOR] ?: false,
             notesLayoutMode = layout,
+            notesSortOrder = sortOrder,
             serverUrl = serverUrl,
             allowLocalHttp = prefs[KEY_ALLOW_LOCAL_HTTP] ?: false,
             username = prefs[KEY_USERNAME].orEmpty(),
             sessionId = prefs[KEY_SESSION_ID].orEmpty(),
-            isSignedIn = serverUrl.isNotBlank() && hasRefresh
+            isSignedIn = signedIn,
+            isLocalOnly = !signedIn && (prefs[KEY_LOCAL_ONLY_MODE] ?: false)
         )
+    }
+
+    suspend fun isSignedInOnce(): Boolean {
+        val prefs = dataStore.data.first()
+        val serverUrl = prefs[KEY_SERVER_URL].orEmpty()
+        val hasRefresh = !prefs[KEY_ENC_REFRESH_TOKEN].isNullOrBlank()
+        return serverUrl.isNotBlank() && hasRefresh
+    }
+
+    suspend fun enableLocalOnlyMode() {
+        dataStore.edit { prefs ->
+            prefs[KEY_LOCAL_ONLY_MODE] = true
+        }
     }
 
     suspend fun getCredentials(): AuthCredentials? {
@@ -103,6 +133,7 @@ class KluddraPreferences(
             prefs[KEY_SESSION_ID] = sessionId
             prefs[KEY_ENC_ACCESS_TOKEN] = encAccess
             prefs[KEY_ENC_REFRESH_TOKEN] = encRefresh
+            prefs[KEY_LOCAL_ONLY_MODE] = false
         }
     }
 
@@ -116,12 +147,13 @@ class KluddraPreferences(
         }
     }
 
-    suspend fun clearSession() {
+    suspend fun clearSession(keepLocalMode: Boolean = false) {
         dataStore.edit { prefs ->
             prefs.remove(KEY_ENC_ACCESS_TOKEN)
             prefs.remove(KEY_ENC_REFRESH_TOKEN)
             prefs.remove(KEY_SESSION_ID)
             prefs.remove(KEY_USERNAME)
+            prefs[KEY_LOCAL_ONLY_MODE] = keepLocalMode
         }
     }
 
@@ -137,15 +169,21 @@ class KluddraPreferences(
         dataStore.edit { it[KEY_NOTES_LAYOUT] = mode.name }
     }
 
+    suspend fun setNotesSortOrder(order: NotesSortOrder) {
+        dataStore.edit { it[KEY_NOTES_SORT_ORDER] = order.name }
+    }
+
     private companion object {
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val KEY_NOTES_LAYOUT = stringPreferencesKey("notes_layout")
+        val KEY_NOTES_SORT_ORDER = stringPreferencesKey("notes_sort_order")
         val KEY_SERVER_URL = stringPreferencesKey("server_url")
         val KEY_ALLOW_LOCAL_HTTP = booleanPreferencesKey("allow_local_http")
         val KEY_USERNAME = stringPreferencesKey("username")
         val KEY_SESSION_ID = stringPreferencesKey("session_id")
         val KEY_ENC_ACCESS_TOKEN = stringPreferencesKey("enc_access_token")
         val KEY_ENC_REFRESH_TOKEN = stringPreferencesKey("enc_refresh_token")
+        val KEY_LOCAL_ONLY_MODE = booleanPreferencesKey("local_only_mode")
     }
 }

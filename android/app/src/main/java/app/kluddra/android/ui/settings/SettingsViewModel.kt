@@ -152,8 +152,8 @@ class SettingsViewModel(
         }
     }
 
-    fun signOut() {
-        viewModelScope.launch { authRepository.signOut() }
+    fun signOut(keepLocalCopy: Boolean = false) {
+        viewModelScope.launch { authRepository.signOut(keepLocalCopy = keepLocalCopy) }
     }
 
     companion object {

@@ -23,15 +23,21 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -52,9 +58,13 @@ import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -88,7 +98,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.key.Key
@@ -96,6 +105,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreInterceptKeyBeforeSoftKeyboard
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -108,6 +119,7 @@ import androidx.compose.ui.unit.sp
 import app.kluddra.android.R
 import app.kluddra.android.data.local.NoteEntity
 import app.kluddra.android.data.prefs.NotesLayoutMode
+import app.kluddra.android.data.prefs.NotesSortOrder
 import app.kluddra.android.sync.SyncStateKind
 import app.kluddra.android.ui.components.CircularHeaderButton
 import app.kluddra.android.ui.components.DiscreetSyncIndicator
@@ -115,7 +127,14 @@ import app.kluddra.android.ui.components.KluddraAddFab
 import app.kluddra.android.ui.components.KluddraEmptyState
 import app.kluddra.android.ui.components.KluddraPullToRefreshBox
 import app.kluddra.android.ui.components.NoteCard
+import app.kluddra.android.ui.components.collapsibleTopBar
+import app.kluddra.android.ui.components.kluddraCardShadow
+import app.kluddra.android.ui.components.kluddraRaisedBorder
+import app.kluddra.android.ui.components.kluddraRecessedBorder
+import app.kluddra.android.ui.components.kluddraRecessedInnerShadow
+import app.kluddra.android.ui.components.rememberCollapsibleTopBarState
 import app.kluddra.android.ui.theme.LocalKluddraDarkTheme
+import app.kluddra.android.ui.theme.LocalKluddraElevation
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -126,6 +145,7 @@ fun NotesOverviewScreen(
     forceSingleColumn: Boolean,
     onQueryChange: (String) -> Unit,
     onToggleLayout: () -> Unit,
+    onSortOrderChange: (NotesSortOrder) -> Unit,
     onNoteClick: (String) -> Unit,
     onCreateNote: () -> Unit,
     onTogglePin: (NoteEntity) -> Unit,
@@ -134,8 +154,11 @@ fun NotesOverviewScreen(
     onUndoTrash: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onRefresh: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isSyncEnabled: Boolean = true,
+    collapseTopBarOnScroll: Boolean = false
 ) {
+    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -150,9 +173,15 @@ fun NotesOverviewScreen(
     }
 
     var actionSheetNote by remember { mutableStateOf<NoteEntity?>(null) }
+    var showSortMenu by remember { mutableStateOf(false) }
+    val is24Hour = remember(context) { android.text.format.DateFormat.is24HourFormat(context) }
+    val todayTimeTemplate = stringResource(R.string.date_today_time)
+    val yesterdayLabel = stringResource(R.string.date_yesterday)
+    val showCreatedDate = state.sortOrder == NotesSortOrder.CREATED_DESC || state.sortOrder == NotesSortOrder.CREATED_ASC
     // Search field is NEVER mounted until the user explicitly taps the Search button ->
     // switching to the Notes tab never focuses search or pops up the keyboard.
     var isSearchOpen by rememberSaveable { mutableStateOf(state.query.isNotEmpty()) }
+    val topBarState = rememberCollapsibleTopBarState(enabled = collapseTopBarOnScroll && !isSearchOpen)
 
     fun closeSearch() {
         isSearchOpen = false
@@ -178,8 +207,8 @@ fun NotesOverviewScreen(
     val retryLabel = stringResource(R.string.action_retry)
 
     // Notify the user discreetly via Snackbar (zero layout shift) if a sync fails
-    LaunchedEffect(state.syncStatus.kind) {
-        if (state.syncStatus.kind == SyncStateKind.ERROR || state.syncStatus.kind == SyncStateKind.AUTH_EXPIRED) {
+    LaunchedEffect(isSyncEnabled, state.syncStatus.kind) {
+        if (isSyncEnabled && (state.syncStatus.kind == SyncStateKind.ERROR || state.syncStatus.kind == SyncStateKind.AUTH_EXPIRED)) {
             val res = snackbarHostState.showSnackbar(
                 message = syncFailedMessage,
                 actionLabel = retryLabel,
@@ -194,12 +223,15 @@ fun NotesOverviewScreen(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.systemBars,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
+                    .collapsibleTopBar(topBarState)
+                    .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.End))
                     .padding(horizontal = 16.dp, vertical = 14.dp)
                     .height(48.dp),
                 contentAlignment = Alignment.Center
@@ -252,11 +284,13 @@ fun NotesOverviewScreen(
                                     autoSize = TextAutoSize.StepBased(minFontSize = 17.sp, maxFontSize = 24.sp),
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
-                                DiscreetSyncIndicator(
-                                    syncStatus = state.syncStatus,
-                                    pendingCount = state.pendingCount,
-                                    onRetry = onRefresh
-                                )
+                                if (isSyncEnabled) {
+                                    DiscreetSyncIndicator(
+                                        syncStatus = state.syncStatus,
+                                        pendingCount = state.pendingCount,
+                                        onRetry = onRefresh
+                                    )
+                                }
                             }
 
                             Row(
@@ -268,6 +302,57 @@ fun NotesOverviewScreen(
                                     contentDescription = stringResource(R.string.search_notes_placeholder),
                                     onClick = { isSearchOpen = true }
                                 )
+                                Box {
+                                    CircularHeaderButton(
+                                        icon = Icons.Outlined.SwapVert,
+                                        contentDescription = stringResource(R.string.sort_notes),
+                                        highlighted = state.sortOrder != NotesSortOrder.UPDATED_DESC,
+                                        onClick = { showSortMenu = true }
+                                    )
+                                    DropdownMenu(
+                                        expanded = showSortMenu,
+                                        onDismissRequest = { showSortMenu = false }
+                                    ) {
+                                        val sortOptions = listOf(
+                                            NotesSortOrder.UPDATED_DESC to R.string.sort_updated_desc,
+                                            NotesSortOrder.CREATED_DESC to R.string.sort_created_desc,
+                                            NotesSortOrder.CREATED_ASC to R.string.sort_created_asc,
+                                            NotesSortOrder.TITLE_ASC to R.string.sort_title_asc
+                                        )
+                                        sortOptions.forEach { (order, labelRes) ->
+                                            val selected = state.sortOrder == order
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        text = stringResource(labelRes),
+                                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                                        color = if (selected) {
+                                                            MaterialTheme.colorScheme.primary
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurface
+                                                        }
+                                                    )
+                                                },
+                                                trailingIcon = if (selected) {
+                                                    {
+                                                        Icon(
+                                                            imageVector = Icons.Rounded.Check,
+                                                            contentDescription = null,
+                                                            tint = MaterialTheme.colorScheme.primary,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    }
+                                                } else {
+                                                    null
+                                                },
+                                                onClick = {
+                                                    showSortMenu = false
+                                                    onSortOrderChange(order)
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
                                 if (!forceSingleColumn) {
                                     val isGrid = state.layoutMode == NotesLayoutMode.GRID
                                     CircularHeaderButton(
@@ -281,7 +366,7 @@ fun NotesOverviewScreen(
                                 CircularHeaderButton(
                                     icon = Icons.Outlined.Settings,
                                     contentDescription = stringResource(R.string.nav_settings),
-                                    showWarningBadge = state.syncStatus.isServerOutdated,
+                                    showWarningBadge = isSyncEnabled && state.syncStatus.isServerOutdated,
                                     onClick = onOpenSettings
                                 )
                             }
@@ -302,6 +387,7 @@ fun NotesOverviewScreen(
             isAtTop = isAtTop,
             isScrollInProgress = gridState.isScrollInProgress,
             onRefresh = onRefresh,
+            enabled = isSyncEnabled,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -339,14 +425,25 @@ fun NotesOverviewScreen(
                     ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalItemSpacing = 12.dp,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.End))
+                        .nestedScroll(topBarState.nestedScrollConnection)
                 ) {
                     if (state.pinnedNotes.isNotEmpty()) {
-                        item(span = StaggeredGridItemSpan.FullLine, key = "pinned_container") {
+                        item(
+                            span = StaggeredGridItemSpan.FullLine,
+                            key = "pinned_container",
+                            contentType = "pinned_container"
+                        ) {
                             PinnedNotesContainer(
                                 notes = state.pinnedNotes,
                                 columns = effectiveColumns,
                                 selectedNoteId = selectedNoteId,
+                                showCreatedDate = showCreatedDate,
+                                todayTimeTemplate = todayTimeTemplate,
+                                yesterdayLabel = yesterdayLabel,
+                                is24Hour = is24Hour,
                                 onNoteClick = onNoteClick,
                                 onNoteLongClick = { note ->
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -358,7 +455,11 @@ fun NotesOverviewScreen(
 
                     if (state.otherNotes.isNotEmpty()) {
                         if (state.pinnedNotes.isNotEmpty()) {
-                            item(span = StaggeredGridItemSpan.FullLine, key = "header_others") {
+                            item(
+                                span = StaggeredGridItemSpan.FullLine,
+                                key = "header_others",
+                                contentType = "section_header"
+                            ) {
                                 SectionHeader(
                                     text = stringResource(R.string.section_notes),
                                     modifier = Modifier.padding(top = 6.dp)
@@ -367,12 +468,23 @@ fun NotesOverviewScreen(
                         }
                         items(
                             items = state.otherNotes,
-                            key = { it.id }
+                            key = { it.id },
+                            contentType = { "note_card" }
                         ) { note ->
+                            val ts = if (showCreatedDate) note.createdAt else note.updatedAt
+                            val dateLabel = remember(ts, todayTimeTemplate, yesterdayLabel, is24Hour) {
+                                NoteDateFormatter.formatTimestamp(
+                                    epochMillis = ts,
+                                    todayWithTimeTemplate = todayTimeTemplate,
+                                    yesterdayLabel = yesterdayLabel,
+                                    is24Hour = is24Hour
+                                )
+                            }
                             NoteCard(
                                 note = note,
                                 isSelected = note.id == selectedNoteId,
                                 isCompactGrid = effectiveColumns > 1,
+                                dateLabel = dateLabel,
                                 onClick = { onNoteClick(note.id) },
                                 onLongClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -531,25 +643,27 @@ private fun ActiveSearchBar(
         }
     }
 
+    val searchShape = RoundedCornerShape(28.dp)
     Surface(
         color = if (darkTheme) {
             MaterialTheme.colorScheme.surfaceContainerHigh
         } else {
             MaterialTheme.colorScheme.surfaceContainerLowest
         },
-        shape = RoundedCornerShape(28.dp),
-        border = BorderStroke(
-            width = if (isFocused) 1.5.dp else 1.dp,
-            color = if (isFocused) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.outlineVariant
-            }
-        ),
-        shadowElevation = if (darkTheme) 6.dp else 3.dp,
+        shape = searchShape,
+        border = if (isFocused) {
+            BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+        } else {
+            kluddraRaisedBorder(isColoredSurface = false)
+        },
+        shadowElevation = 0.dp,
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
+            .kluddraCardShadow(
+                elevation = if (darkTheme) 8.dp else 5.dp,
+                shape = searchShape
+            )
     ) {
         Row(
             modifier = Modifier
@@ -626,28 +740,26 @@ private fun PinnedNotesContainer(
     notes: List<NoteEntity>,
     columns: Int,
     selectedNoteId: String?,
+    showCreatedDate: Boolean,
+    todayTimeTemplate: String,
+    yesterdayLabel: String,
+    is24Hour: Boolean,
     onNoteClick: (String) -> Unit,
     onNoteLongClick: (NoteEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val darkTheme = LocalKluddraDarkTheme.current
-    val trayColor = (if (darkTheme) {
-        MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.62f)
-    } else {
-        MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.58f)
-    }).compositeOver(MaterialTheme.colorScheme.background)
+    val elev = LocalKluddraElevation.current
+    val trayShape = RoundedCornerShape(30.dp)
 
     Surface(
-        color = trayColor,
-        shape = RoundedCornerShape(30.dp),
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (darkTheme) 0.42f else 0.52f)
-        ),
-        shadowElevation = if (darkTheme) 2.dp else 0.dp,
+        color = elev.recessedWell,
+        shape = trayShape,
+        border = kluddraRecessedBorder(),
+        shadowElevation = 0.dp,
         modifier = modifier
             .fillMaxWidth()
             .padding(bottom = 4.dp)
+            .kluddraRecessedInnerShadow(trayShape)
     ) {
         Column(
             modifier = Modifier
@@ -697,10 +809,15 @@ private fun PinnedNotesContainer(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         leftNotes.forEach { note ->
+                            val ts = if (showCreatedDate) note.createdAt else note.updatedAt
+                            val dateLabel = remember(ts, todayTimeTemplate, yesterdayLabel, is24Hour) {
+                                NoteDateFormatter.formatTimestamp(ts, todayTimeTemplate, yesterdayLabel, is24Hour)
+                            }
                             NoteCard(
                                 note = note,
                                 isSelected = note.id == selectedNoteId,
                                 isCompactGrid = true,
+                                dateLabel = dateLabel,
                                 onClick = { onNoteClick(note.id) },
                                 onLongClick = { onNoteLongClick(note) }
                             )
@@ -711,10 +828,15 @@ private fun PinnedNotesContainer(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         rightNotes.forEach { note ->
+                            val ts = if (showCreatedDate) note.createdAt else note.updatedAt
+                            val dateLabel = remember(ts, todayTimeTemplate, yesterdayLabel, is24Hour) {
+                                NoteDateFormatter.formatTimestamp(ts, todayTimeTemplate, yesterdayLabel, is24Hour)
+                            }
                             NoteCard(
                                 note = note,
                                 isSelected = note.id == selectedNoteId,
                                 isCompactGrid = true,
+                                dateLabel = dateLabel,
                                 onClick = { onNoteClick(note.id) },
                                 onLongClick = { onNoteLongClick(note) }
                             )
@@ -727,10 +849,15 @@ private fun PinnedNotesContainer(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     notes.forEach { note ->
+                        val ts = if (showCreatedDate) note.createdAt else note.updatedAt
+                        val dateLabel = remember(ts, todayTimeTemplate, yesterdayLabel, is24Hour) {
+                            NoteDateFormatter.formatTimestamp(ts, todayTimeTemplate, yesterdayLabel, is24Hour)
+                        }
                         NoteCard(
                             note = note,
                             isSelected = note.id == selectedNoteId,
                             isCompactGrid = columns > 1,
+                            dateLabel = dateLabel,
                             onClick = { onNoteClick(note.id) },
                             onLongClick = { onNoteLongClick(note) }
                         )

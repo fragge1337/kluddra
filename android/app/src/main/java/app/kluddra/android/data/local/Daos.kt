@@ -1,10 +1,18 @@
 package app.kluddra.android.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
+
+data class NoteColorSlot(
+    val id: String,
+    val color: String,
+    @ColumnInfo(name = "is_pinned")
+    val isPinned: Boolean
+)
 
 @Dao
 interface NoteDao {
@@ -60,6 +68,16 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE purged_at IS NULL ORDER BY is_pinned DESC, updated_at DESC")
     suspend fun getAllNonPurgedNotes(): List<NoteEntity>
 
+    @Query(
+        """
+        SELECT id, color, is_pinned FROM notes
+        WHERE trashed_at IS NULL AND purged_at IS NULL
+        ORDER BY is_pinned ASC, updated_at DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getRecentActiveColorSlots(limit: Int = 8): List<NoteColorSlot>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(note: NoteEntity)
 
@@ -95,6 +113,16 @@ interface ShoppingDao {
 
     @Query("SELECT * FROM shopping_items WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): ShoppingItemEntity?
+
+    @Query(
+        """
+        SELECT sort_order FROM shopping_items
+        WHERE deleted_at IS NULL AND is_checked = 0
+        ORDER BY sort_order DESC
+        LIMIT 1
+        """
+    )
+    suspend fun getLastActiveSortOrder(): String?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(item: ShoppingItemEntity)

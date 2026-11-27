@@ -125,7 +125,7 @@
     <string name="confirm_sign_out_title">Se déconnecter ?</string>
     <string name="confirm_sign_out_body">Les notes locales de cet appareil seront effacées. Vérifiez que tout est synchronisé.</string>
     <string name="settings_app_version">Version %1$s</string>
-    <string name="settings_privacy_note">Sans publicité, sans suivi, sans cloud externe.</string>
+    <string name="settings_privacy_note">Vos données. Votre appareil. Votre propre cloud.</string>
     <string name="sync_dialog_title">État de synchro</string>
     <string name="sync_last_synced">Dernière synchro : %1$s</string>
     <string name="sync_never">Jamais</string>
@@ -152,4 +152,23 @@
     <string name="sessions_revoked_others">%1$d autre(s) appareil(s) déconnecté(s)</string>
     <string name="sessions_load_failed">Impossible de charger les appareils actifs</string>
     <string name="sessions_action_failed">Impossible de mettre à jour les appareils actifs</string>
+    <string name="welcome_headline">Bienvenue dans Kluddra</string>
+    <string name="welcome_subtitle">Notes privées et listes de courses – stockées sur votre appareil, avec synchronisation facultative vers votre propre serveur.</string>
+    <string name="action_start_local">Utiliser en local</string>
+    <string name="action_connect_server">Connecter votre serveur</string>
+    <string name="welcome_later_hint">Vous pouvez connecter votre propre serveur Kluddra à tout moment dans les Paramètres.</string>
+    <string name="settings_local_mode_title">Mode local (cet appareil uniquement)</string>
+    <string name="settings_local_mode_desc">Vos notes et votre liste de courses restent privées sur cet appareil. Connectez votre propre serveur Kluddra lorsque vous souhaitez synchroniser vos appareils.</string>
+    <string name="confirm_sign_out_body_choice">Choisissez de conserver une copie locale sur cet appareil ou d\'effacer toutes les données locales.</string>
+    <string name="action_sign_out_keep_local">Se déconnecter et garder en local</string>
+    <string name="action_sign_out_clear_device">Se déconnecter et effacer l\'appareil</string>
+    <string name="sort_notes">Trier les notes</string>
+    <string name="sort_updated_desc">Modifiées récemment</string>
+    <string name="sort_created_desc">Créées récemment</string>
+    <string name="sort_created_asc">Plus anciennes</string>
+    <string name="sort_title_asc">Titre (A–Z)</string>
+    <string name="date_today_time">Aujourd\'hui %1$s</string>
+    <string name="date_yesterday">Hier</string>
+    <string name="editor_meta_edited_created">Modifiée %1$s · Créée %2$s</string>
+    <string name="editor_meta_created">Créée %1$s</string>
 </resources>

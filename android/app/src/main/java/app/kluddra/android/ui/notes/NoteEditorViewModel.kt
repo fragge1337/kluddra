@@ -1,5 +1,6 @@
 package app.kluddra.android.ui.notes
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+@Immutable
 data class NoteEditorUiState(
     val noteId: String = "",
     val isNewNote: Boolean = true,
@@ -26,6 +28,8 @@ data class NoteEditorUiState(
     val isPinned: Boolean = false,
     val isReadOnly: Boolean = false,
     val isConflictCopy: Boolean = false,
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L,
     val isLoaded: Boolean = false
 ) {
     val serializedBody: String
@@ -60,6 +64,7 @@ class NoteEditorViewModel(
             val freshId = UuidV7.generate()
             val parsedBlocks = NoteFormatting.parseBlocks(initialBody)
             nextBlockUid = parsedBlocks.size + 1
+            val now = System.currentTimeMillis()
             _uiState.value = NoteEditorUiState(
                 noteId = freshId,
                 isNewNote = true,
@@ -72,6 +77,8 @@ class NoteEditorViewModel(
                 isPinned = false,
                 isReadOnly = false,
                 isConflictCopy = false,
+                createdAt = now,
+                updatedAt = now,
                 isLoaded = true
             )
             // Assign smart color avoiding immediate neighboring notes in the overview
@@ -105,6 +112,8 @@ class NoteEditorViewModel(
                             isPinned = entity.isPinned,
                             isReadOnly = entity.isReadOnly,
                             isConflictCopy = entity.conflictOfNoteId != null,
+                            createdAt = entity.createdAt,
+                            updatedAt = entity.updatedAt,
                             isLoaded = true
                         )
                     } else {
@@ -113,6 +122,8 @@ class NoteEditorViewModel(
                             isPinned = entity.isPinned,
                             isReadOnly = entity.isReadOnly,
                             isConflictCopy = entity.conflictOfNoteId != null,
+                            createdAt = entity.createdAt,
+                            updatedAt = entity.updatedAt,
                             title = if (entity.isReadOnly) entity.title else current.title,
                             blocks = if (entity.isReadOnly) NoteFormatting.parseBlocks(entity.body) else current.blocks
                         )
@@ -346,13 +357,22 @@ class NoteEditorViewModel(
             val state = _uiState.value
             val body = state.serializedBody
             if (!state.isReadOnly && (state.title.isNotBlank() || body.isNotBlank())) {
-                noteRepository.saveNote(
+                val saved = noteRepository.saveNote(
                     id = state.noteId,
                     title = state.effectiveTitleForSave,
                     body = body,
                     color = state.colorKey,
                     isPinned = state.isPinned
                 )
+                if (saved != null) {
+                    _uiState.update { current ->
+                        if (current.noteId == saved.id) {
+                            current.copy(createdAt = saved.createdAt, updatedAt = saved.updatedAt)
+                        } else {
+                            current
+                        }
+                    }
+                }
             }
         }
     }

@@ -14,8 +14,16 @@ class AuthRepository(
     private val preferences: KluddraPreferences,
     private val db: KluddraDatabase,
     private val syncEngine: SyncEngine,
-    private val syncScheduler: SyncScheduler
+    private val syncScheduler: SyncScheduler,
+    private val noteRepository: NoteRepository,
+    private val shoppingRepository: ShoppingRepository
 ) {
+    suspend fun startLocalOnly() {
+        syncScheduler.cancelAll()
+        syncEngine.resetStatus()
+        preferences.enableLocalOnlyMode()
+    }
+
     suspend fun probeServer(serverUrl: String, allowLocalHttp: Boolean): ServerInfoDto =
         api.fetchServerInfo(serverUrl, allowLocalHttp)
 
@@ -35,6 +43,8 @@ class AuthRepository(
             accessToken = tokens.accessToken,
             refreshToken = tokens.refreshToken
         )
+        noteRepository.enqueueAllLocalForSync()
+        shoppingRepository.enqueueAllLocalForSync()
         syncScheduler.ensurePeriodicSyncScheduled()
         syncEngine.syncNow()
     }
@@ -54,6 +64,8 @@ class AuthRepository(
             accessToken = tokens.accessToken,
             refreshToken = tokens.refreshToken
         )
+        noteRepository.enqueueAllLocalForSync()
+        shoppingRepository.enqueueAllLocalForSync()
         syncScheduler.ensurePeriodicSyncScheduled()
         syncEngine.syncNow()
     }
@@ -64,15 +76,25 @@ class AuthRepository(
 
     suspend fun revokeOtherSessions(): Int = api.revokeOtherSessions()
 
-    suspend fun signOut() {
+    suspend fun signOut(keepLocalCopy: Boolean = false) {
         api.logout()
         syncScheduler.cancelAll()
-        preferences.clearSession()
-        db.withTransaction {
-            db.noteDao().clearAll()
-            db.shoppingDao().clearAll()
-            db.syncDao().clearOutbox()
-            db.syncDao().clearMetadata()
+        syncEngine.resetStatus()
+        preferences.clearSession(keepLocalMode = keepLocalCopy)
+        if (keepLocalCopy) {
+            db.withTransaction {
+                db.syncDao().clearOutbox()
+                db.syncDao().clearMetadata()
+            }
+            noteRepository.markAllLocalDirty()
+            shoppingRepository.markAllLocalDirty()
+        } else {
+            db.withTransaction {
+                db.noteDao().clearAll()
+                db.shoppingDao().clearAll()
+                db.syncDao().clearOutbox()
+                db.syncDao().clearMetadata()
+            }
         }
     }
 }

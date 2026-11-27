@@ -234,3 +234,47 @@ func TestShoppingListClearAllDoesNotDeleteOfflineNewItem(t *testing.T) {
 		t.Fatalf("expected only Mjölk to remain, got %+v err=%v", items, err)
 	}
 }
+
+func TestNoteColorWhitelistAcceptsAllTenColors(t *testing.T) {
+	ctx := context.Background()
+	_, svc, user := setupSyncEnv(t)
+
+	allowed := []string{"lavender", "pistachio", "mint", "sky", "rose", "salmon", "peach", "butter", "sand", "neutral"}
+	for _, color := range allowed {
+		noteID := id.NewUUIDv7()
+		res, err := svc.Push(ctx, user.ID, model.SyncPushRequest{
+			ClientDevice: "TestDevice",
+			Mutations: []model.SyncMutation{{
+				MutationID:  id.NewUUIDv7(),
+				Entity:      "note",
+				Op:          "upsert",
+				EntityID:    noteID,
+				BaseVersion: 0,
+				Payload:     mustRaw(t, map[string]any{"title": "Color " + color, "body": "Body", "color": color}),
+			}},
+		})
+		if err != nil || len(res.Results) != 1 || res.Results[0].Note == nil {
+			t.Fatalf("push color %q failed: %+v err=%v", color, res, err)
+		}
+		if res.Results[0].Note.Color != color {
+			t.Fatalf("expected color %q to be preserved, got %q", color, res.Results[0].Note.Color)
+		}
+	}
+
+	// Unknown color should normalize cleanly to ""
+	badID := id.NewUUIDv7()
+	res, err := svc.Push(ctx, user.ID, model.SyncPushRequest{
+		ClientDevice: "TestDevice",
+		Mutations: []model.SyncMutation{{
+			MutationID:  id.NewUUIDv7(),
+			Entity:      "note",
+			Op:          "upsert",
+			EntityID:    badID,
+			BaseVersion: 0,
+			Payload:     mustRaw(t, map[string]any{"title": "Invalid", "body": "Body", "color": "neon_rainbow"}),
+		}},
+	})
+	if err != nil || res.Results[0].Note == nil || res.Results[0].Note.Color != "" {
+		t.Fatalf("expected unknown color to normalize to empty string, got %+v err=%v", res, err)
+	}
+}

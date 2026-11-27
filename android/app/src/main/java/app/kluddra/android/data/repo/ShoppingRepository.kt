@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import app.kluddra.android.data.local.KluddraDatabase
 import app.kluddra.android.data.local.PendingMutationEntity
 import app.kluddra.android.data.local.ShoppingItemEntity
+import app.kluddra.android.data.prefs.KluddraPreferences
 import app.kluddra.android.data.remote.ShoppingUpsertPayloadDto
 import app.kluddra.android.data.util.FractionalOrder
 import app.kluddra.android.data.util.UuidV7
@@ -13,11 +14,39 @@ import kotlinx.serialization.json.Json
 
 class ShoppingRepository(
     private val db: KluddraDatabase,
-    private val syncScheduler: SyncScheduler
+    private val syncScheduler: SyncScheduler,
+    private val preferences: KluddraPreferences
 ) {
     private val shoppingDao = db.shoppingDao()
     private val syncDao = db.syncDao()
     private val json = Json { encodeDefaults = true }
+
+    /**
+     * Enqueues all locally created or modified shopping items when upgrading from Local-only mode
+     * to a self-hosted Kluddra server.
+     */
+    suspend fun enqueueAllLocalForSync() {
+        val localItems = shoppingDao.getActiveItemsOnce().filter { it.isDirty || it.version == 0L }
+        if (localItems.isEmpty()) return
+        val now = System.currentTimeMillis()
+        db.withTransaction {
+            for (item in localItems) {
+                enqueueUpsertTx(item, now)
+            }
+        }
+    }
+
+    /**
+     * Marks kept local shopping items dirty when signing out to Local-only mode so they will
+     * cleanly sync if the user connects to a server later.
+     */
+    suspend fun markAllLocalDirty() {
+        val kept = shoppingDao.getActiveItemsOnce().filter { !it.isDirty }
+        if (kept.isEmpty()) return
+        db.withTransaction {
+            shoppingDao.upsertAll(kept.map { it.copy(isDirty = true) })
+        }
+    }
 
     fun observeItems(): Flow<List<ShoppingItemEntity>> = shoppingDao.observeActiveItems()
 
@@ -26,8 +55,7 @@ class ShoppingRepository(
         if (text.isEmpty()) return null
 
         val now = System.currentTimeMillis()
-        val currentUnchecked = shoppingDao.getActiveItemsOnce().filter { !it.isChecked }
-        val sortOrder = FractionalOrder.after(currentUnchecked.lastOrNull()?.sortOrder)
+        val sortOrder = FractionalOrder.after(shoppingDao.getLastActiveSortOrder())
 
         val entity = ShoppingItemEntity(
             id = UuidV7.generate(),
@@ -106,47 +134,62 @@ class ShoppingRepository(
     suspend fun restoreItems(items: List<ShoppingItemEntity>) {
         if (items.isEmpty()) return
         val now = System.currentTimeMillis()
+        val signedIn = preferences.isSignedInOnce()
         db.withTransaction {
             for (item in items) {
-                // Cancel any unsent delete mutation for this item so it cannot race with restoration;
-                // if delete was already pushed, the new upsert revives the item on the server (deleted_at = NULL).
-                syncDao.deleteSuperseded("shopping_item", item.id, "delete")
                 val restored = item.copy(deletedAt = null, updatedAt = now, isDirty = true)
                 shoppingDao.upsert(restored)
-                enqueueUpsertTx(restored, now)
+                if (signedIn) {
+                    // Cancel any unsent delete mutation for this item so it cannot race with restoration;
+                    // if delete was already pushed, the new upsert revives the item on the server (deleted_at = NULL).
+                    syncDao.deleteSuperseded("shopping_item", item.id, "delete")
+                    enqueueUpsertTx(restored, now)
+                }
             }
         }
-        syncScheduler.enqueueImmediateSync(delayMs = 400L)
+        if (signedIn) {
+            syncScheduler.enqueueImmediateSync(delayMs = 400L)
+        }
     }
 
     private suspend fun deleteItems(items: List<ShoppingItemEntity>) {
         val now = System.currentTimeMillis()
+        val signedIn = preferences.isSignedInOnce()
         db.withTransaction {
             for (item in items) {
                 shoppingDao.upsert(item.copy(deletedAt = now, updatedAt = now, isDirty = true))
-                syncDao.enqueue(
-                    PendingMutationEntity(
-                        mutationId = UuidV7.generate(),
-                        entityType = "shopping_item",
-                        op = "delete",
-                        entityId = item.id,
-                        baseVersion = item.version,
-                        payloadJson = "{}",
-                        createdAt = now
+                if (signedIn) {
+                    syncDao.enqueue(
+                        PendingMutationEntity(
+                            mutationId = UuidV7.generate(),
+                            entityType = "shopping_item",
+                            op = "delete",
+                            entityId = item.id,
+                            baseVersion = item.version,
+                            payloadJson = "{}",
+                            createdAt = now
+                        )
                     )
-                )
+                }
             }
         }
-        syncScheduler.enqueueImmediateSync(delayMs = 400L)
+        if (signedIn) {
+            syncScheduler.enqueueImmediateSync(delayMs = 400L)
+        }
     }
 
     private suspend fun persistUpsert(entity: ShoppingItemEntity) {
         val now = System.currentTimeMillis()
+        val signedIn = preferences.isSignedInOnce()
         db.withTransaction {
             shoppingDao.upsert(entity)
-            enqueueUpsertTx(entity, now)
+            if (signedIn) {
+                enqueueUpsertTx(entity, now)
+            }
         }
-        syncScheduler.enqueueImmediateSync(delayMs = 400L)
+        if (signedIn) {
+            syncScheduler.enqueueImmediateSync(delayMs = 400L)
+        }
     }
 
     private suspend fun enqueueUpsertTx(entity: ShoppingItemEntity, now: Long) {

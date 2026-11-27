@@ -14,13 +14,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 enum class OnboardingStep {
+    WELCOME,
     ENTER_SERVER,
     INITIAL_SETUP,
     SIGN_IN
 }
 
 data class OnboardingUiState(
-    val step: OnboardingStep = OnboardingStep.ENTER_SERVER,
+    val step: OnboardingStep = OnboardingStep.WELCOME,
     val serverUrlInput: String = "",
     val validatedServerUrl: String = "",
     val allowLocalHttp: Boolean = false,
@@ -39,6 +40,38 @@ class OnboardingViewModel(
 
     private val _uiState = MutableStateFlow(OnboardingUiState())
     val uiState: StateFlow<OnboardingUiState> = _uiState.asStateFlow()
+
+    fun resetForStep(step: OnboardingStep) {
+        _uiState.value = OnboardingUiState(step = step)
+    }
+
+    fun chooseLocalOnly() {
+        viewModelScope.launch {
+            authRepository.startLocalOnly()
+        }
+    }
+
+    fun startServerConnect() {
+        _uiState.update {
+            it.copy(
+                step = OnboardingStep.ENTER_SERVER,
+                errorCode = null,
+                errorMessage = null
+            )
+        }
+    }
+
+    fun goBackToWelcome() {
+        _uiState.update {
+            it.copy(
+                step = OnboardingStep.WELCOME,
+                password = "",
+                setupCode = "",
+                errorCode = null,
+                errorMessage = null
+            )
+        }
+    }
 
     fun onServerUrlChange(value: String) {
         _uiState.update { it.copy(serverUrlInput = value, errorCode = null, errorMessage = null) }

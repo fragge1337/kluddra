@@ -1,6 +1,7 @@
 package app.kluddra.android.ui.notes
 
 import android.content.Intent
+import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -16,16 +17,25 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -76,7 +86,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -91,6 +100,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
@@ -100,6 +110,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -108,12 +119,15 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import app.kluddra.android.R
+import app.kluddra.android.ui.components.kluddraCardShadow
+import app.kluddra.android.ui.components.kluddraRaisedBorder
 import app.kluddra.android.ui.theme.LocalKluddraDarkTheme
 import app.kluddra.android.ui.theme.LocalKluddraSemantics
 import app.kluddra.android.ui.theme.NoteColor
 import kotlinx.coroutines.delay
+import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun NoteEditorScreen(
     state: NoteEditorUiState,
@@ -131,7 +145,8 @@ fun NoteEditorScreen(
     onFlushSave: () -> Unit,
     onBack: () -> Unit,
     shareTextProvider: () -> String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    collapseTopBarOnScroll: Boolean = false
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -142,6 +157,39 @@ fun NoteEditorScreen(
     val darkTheme = LocalKluddraDarkTheme.current
     val semantics = LocalKluddraSemantics.current
     val noteColor = NoteColor.fromKey(state.colorKey)
+    val todayTimeTemplate = stringResource(R.string.date_today_time)
+    val yesterdayLabel = stringResource(R.string.date_yesterday)
+    val is24Hour = remember(context) { DateFormat.is24HourFormat(context) }
+    val hasDistinctEdit = NoteDateFormatter.hasDistinctEditTime(state.createdAt, state.updatedAt)
+    val formattedUpdated = remember(state.updatedAt, todayTimeTemplate, yesterdayLabel, is24Hour) {
+        val locale = Locale.getDefault()
+        NoteDateFormatter.formatTimestamp(
+            epochMillis = state.updatedAt,
+            todayWithTimeTemplate = todayTimeTemplate,
+            yesterdayLabel = yesterdayLabel,
+            is24Hour = is24Hour,
+            locale = locale
+        ).replaceFirstChar { it.lowercase(locale) }
+    }
+    val formattedCreated = remember(state.createdAt, todayTimeTemplate, yesterdayLabel, is24Hour) {
+        val locale = Locale.getDefault()
+        NoteDateFormatter.formatTimestamp(
+            epochMillis = state.createdAt,
+            todayWithTimeTemplate = todayTimeTemplate,
+            yesterdayLabel = yesterdayLabel,
+            is24Hour = is24Hour,
+            locale = locale
+        ).replaceFirstChar { it.lowercase(locale) }
+    }
+    val dateMetadataText = when {
+        hasDistinctEdit && formattedUpdated.isNotEmpty() && formattedCreated.isNotEmpty() ->
+            stringResource(R.string.editor_meta_edited_created, formattedUpdated, formattedCreated)
+        formattedCreated.isNotEmpty() ->
+            stringResource(R.string.editor_meta_created, formattedCreated)
+        formattedUpdated.isNotEmpty() ->
+            stringResource(R.string.editor_meta_created, formattedUpdated)
+        else -> ""
+    }
     val editorBackground by animateColorAsState(
         targetValue = noteColor.editorBackground(darkTheme, MaterialTheme.colorScheme.background),
         animationSpec = tween(260),
@@ -235,10 +283,12 @@ fun NoteEditorScreen(
                 NoteFormatting.isCursorInBold(focusedFieldVal.text, focusedFieldVal.selection.start)
             )
     }
-    val autoTitlePreview = if (!state.hasManualTitle && state.title.isBlank()) {
-        NoteFormatting.autoGenerateTitle(state.serializedBody)
-    } else {
-        ""
+    val autoTitlePreview = remember(state.hasManualTitle, state.title, state.blocks) {
+        if (!state.hasManualTitle && state.title.isBlank()) {
+            NoteFormatting.autoGenerateTitleFromBlocks(state.blocks)
+        } else {
+            ""
+        }
     }
 
     Box(
@@ -268,11 +318,24 @@ fun NoteEditorScreen(
                 }
             }
     ) {
+    val topBarScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .then(
+                if (collapseTopBarOnScroll) {
+                    Modifier.nestedScroll(topBarScrollBehavior.nestedScrollConnection)
+                } else {
+                    Modifier
+                }
+            ),
         containerColor = editorBackground,
+        contentWindowInsets = WindowInsets.systemBars,
         topBar = {
             TopAppBar(
+                scrollBehavior = if (collapseTopBarOnScroll) topBarScrollBehavior else null,
+                windowInsets = WindowInsets.statusBars.only(WindowInsetsSides.Top)
+                    .union(WindowInsets.navigationBars.only(WindowInsetsSides.Horizontal)),
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -454,6 +517,15 @@ fun NoteEditorScreen(
                                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.onBackground
                                 )
+                            }
+                            if (dateMetadataText.isNotEmpty()) {
+                                Text(
+                                    text = dateMetadataText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                            } else if (displayTitle.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(6.dp))
                             }
                             state.blocks.forEachIndexed { idx, block ->
@@ -535,7 +607,17 @@ fun NoteEditorScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    if (dateMetadataText.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = dateMetadataText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    } else {
+                        Spacer(modifier = Modifier.height(14.dp))
+                    }
 
                     // Interactive structured content blocks (Paragraphs, Checkboxes, Numbered Lists, Bold)
                     Column(
@@ -555,137 +637,61 @@ fun NoteEditorScreen(
                             }
                             .padding(bottom = 140.dp)
                     ) {
+                        var runningOrdinal = 0
                         state.blocks.forEachIndexed { idx, block ->
-                            key(block.uid) {
-                            val req = remember(block.uid) {
-                                focusRequesters.getOrPut(block.uid) { FocusRequester() }
-                            }
-                            val storedVal = fieldValues[block.uid]
-                            val tfValue = if (storedVal != null && storedVal.text == block.text) {
-                                storedVal
+                            if (block.type == NoteBlockType.NUMBERED) {
+                                runningOrdinal++
                             } else {
-                                TextFieldValue(block.text, TextRange(block.text.length)).also {
-                                    fieldValues[block.uid] = it
-                                }
+                                runningOrdinal = 0
                             }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.Top,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                when (block.type) {
-                                    NoteBlockType.CHECKBOX -> {
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .size(32.dp)
-                                                .clip(CircleShape)
-                                                .clickable {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    onToggleBlockCheckbox(idx)
-                                                }
-                                        ) {
-                                            Icon(
-                                                imageVector = if (block.isChecked) {
-                                                    Icons.Outlined.CheckBox
-                                                } else {
-                                                    Icons.Outlined.CheckBoxOutlineBlank
-                                                },
-                                                contentDescription = null,
-                                                tint = if (block.isChecked) {
-                                                    semantics.success
-                                                } else {
-                                                    MaterialTheme.colorScheme.primary
-                                                },
-                                                modifier = Modifier.size(22.dp)
+                            val ordinal = runningOrdinal
+                            key(block.uid) {
+                                val req = remember(block.uid) {
+                                    focusRequesters.getOrPut(block.uid) { FocusRequester() }
+                                }
+                                val storedVal = fieldValues[block.uid]
+                                val tfValue = if (storedVal != null && storedVal.text == block.text) {
+                                    storedVal
+                                } else {
+                                    TextFieldValue(block.text, TextRange(block.text.length)).also {
+                                        fieldValues[block.uid] = it
+                                    }
+                                }
+                                NoteBlockRow(
+                                    block = block,
+                                    numberedOrdinal = ordinal,
+                                    showEmptyHint = idx == 0 && state.blocks.size == 1 && block.text.isEmpty(),
+                                    tfValue = tfValue,
+                                    allowBodyFocus = allowBodyFocus,
+                                    focusRequester = req,
+                                    boldVisualTransformation = boldVisualTransformation,
+                                    onToggleCheckbox = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onToggleBlockCheckbox(idx)
+                                    },
+                                    onValueChange = { rawUpdated ->
+                                        val updated = NoteFormatting.applyBoldTypingDelta(
+                                            previous = tfValue,
+                                            updated = rawUpdated,
+                                            boldTypingActive = isBoldTypingMode
+                                        )
+                                        fieldValues[block.uid] = updated
+                                        if (updated.text != block.text) {
+                                            if (updated.text.contains('\n')) {
+                                                isBoldTypingMode = false
+                                            }
+                                            onBlockTextChange(idx, updated.text)
+                                        } else {
+                                            // Cursor moved without typing -> sync bold button state
+                                            isBoldTypingMode = NoteFormatting.isCursorInBold(
+                                                updated.text,
+                                                updated.selection.start
                                             )
                                         }
-                                    }
-                                    NoteBlockType.NUMBERED -> {
-                                        val num = NoteFormatting.numberForIndex(state.blocks, idx)
-                                        Text(
-                                            text = "$num.",
-                                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.padding(top = 2.dp, end = 4.dp)
-                                        )
-                                    }
-                                    NoteBlockType.PARAGRAPH -> Unit
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(top = if (block.type == NoteBlockType.CHECKBOX) 3.dp else 0.dp)
-                                ) {
-                                    if (idx == 0 && state.blocks.size == 1 && block.text.isEmpty()) {
-                                        Text(
-                                            text = stringResource(R.string.editor_body_hint),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
-                                        )
-                                    }
-                                    BasicTextField(
-                                        value = tfValue,
-                                        onValueChange = { rawUpdated ->
-                                            val updated = NoteFormatting.applyBoldTypingDelta(
-                                                previous = tfValue,
-                                                updated = rawUpdated,
-                                                boldTypingActive = isBoldTypingMode
-                                            )
-                                            fieldValues[block.uid] = updated
-                                            if (updated.text != block.text) {
-                                                if (updated.text.contains('\n')) {
-                                                    isBoldTypingMode = false
-                                                }
-                                                onBlockTextChange(idx, updated.text)
-                                            } else {
-                                                // Cursor moved without typing -> sync bold button state
-                                                isBoldTypingMode = NoteFormatting.isCursorInBold(
-                                                    updated.text,
-                                                    updated.selection.start
-                                                )
-                                            }
-                                        },
-                                        visualTransformation = boldVisualTransformation,
-                                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                            color = if (block.type == NoteBlockType.CHECKBOX && block.isChecked) {
-                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                            } else {
-                                                MaterialTheme.colorScheme.onBackground
-                                            },
-                                            textDecoration = if (block.type == NoteBlockType.CHECKBOX && block.isChecked) {
-                                                TextDecoration.LineThrough
-                                            } else {
-                                                TextDecoration.None
-                                            }
-                                        ),
-                                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                        keyboardOptions = KeyboardOptions(
-                                            capitalization = KeyboardCapitalization.Sentences
-                                        ),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .focusProperties { canFocus = allowBodyFocus }
-                                            .focusRequester(req)
-                                            .onFocusChanged { fs ->
-                                                if (fs.isFocused) onBlockFocused(idx)
-                                            }
-                                            .onPreviewKeyEvent { event ->
-                                                if (event.type == KeyEventType.KeyDown &&
-                                                    event.key == Key.Backspace &&
-                                                    block.text.isEmpty()
-                                                ) {
-                                                    onBlockBackspaceWhenEmpty(idx)
-                                                    true
-                                                } else {
-                                                    false
-                                                }
-                                            }
-                                    )
-                                }
-                            }
+                                    },
+                                    onFocused = { onBlockFocused(idx) },
+                                    onBackspaceWhenEmpty = { onBlockBackspaceWhenEmpty(idx) }
+                                )
                             }
                         }
                     }
@@ -693,13 +699,27 @@ fun NoteEditorScreen(
             }
 
             // Bottom floating controls: Color swatch tray + Material 3 Expressive HorizontalFloatingToolbar
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+            // In compact-height phone landscape while typing, hide the floating bar so the full
+            // ~140dp viewport above the keyboard stays unobstructed for the title and text.
+            val imeVisible = WindowInsets.isImeVisible
+            val showFloatingControls = !(collapseTopBarOnScroll && imeVisible)
+            LaunchedEffect(showFloatingControls) {
+                if (!showFloatingControls && showColorPicker) {
+                    showColorPicker = false
+                }
+            }
+            AnimatedVisibility(
+                visible = showFloatingControls,
+                enter = fadeIn(tween(150)) + scaleIn(initialScale = 0.94f, animationSpec = tween(160)),
+                exit = fadeOut(tween(100)),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 14.dp)
+            ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 AnimatedVisibility(
                     visible = showColorPicker && !state.isReadOnly,
@@ -716,50 +736,62 @@ fun NoteEditorScreen(
                 ) {
                     // Transparent outer padding prevents clipping of the drop shadow during animation.
                     Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        val pickerShape = RoundedCornerShape(28.dp)
                         Surface(
                             color = if (darkTheme) {
                                 MaterialTheme.colorScheme.surfaceContainerHighest
                             } else {
                                 MaterialTheme.colorScheme.surfaceContainerLowest
                             },
-                            shape = RoundedCornerShape(28.dp),
-                            border = BorderStroke(
-                                1.dp,
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (darkTheme) 0.75f else 0.55f)
-                            ),
-                            shadowElevation = 8.dp,
-                            modifier = Modifier.onGloballyPositioned { colorPickerBounds = it.boundsInRoot() }
+                            shape = pickerShape,
+                            border = kluddraRaisedBorder(isColoredSurface = false),
+                            shadowElevation = 0.dp,
+                            modifier = Modifier
+                                .kluddraCardShadow(
+                                    elevation = if (darkTheme) 12.dp else 9.dp,
+                                    shape = pickerShape
+                                )
+                                .onGloballyPositioned { colorPickerBounds = it.boundsInRoot() }
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Column(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                NoteColor.entries.forEach { option ->
-                                    val selected = option.key == noteColor.key
-                                    Surface(
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            onSelectColor(option)
-                                            showColorPicker = false
-                                        },
-                                        color = option.swatch(darkTheme),
-                                        shape = CircleShape,
-                                        border = if (selected) {
-                                            BorderStroke(2.5.dp, MaterialTheme.colorScheme.primary)
-                                        } else {
-                                            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                                        },
-                                        modifier = Modifier.size(34.dp)
+                                NoteColor.entries.chunked(5).forEach { rowColors ->
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        if (selected) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.Check,
-                                                    contentDescription = null,
-                                                    tint = option.onContainer(darkTheme),
-                                                    modifier = Modifier.size(18.dp)
-                                                )
+                                        rowColors.forEach { option ->
+                                            val selected = option.key == noteColor.key
+                                            Surface(
+                                                onClick = {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    onSelectColor(option)
+                                                    showColorPicker = false
+                                                },
+                                                color = option.swatch(darkTheme),
+                                                shape = CircleShape,
+                                                border = if (selected) {
+                                                    BorderStroke(2.5.dp, MaterialTheme.colorScheme.primary)
+                                                } else {
+                                                    BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                                },
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .testTag("note_color_${option.key}")
+                                            ) {
+                                                if (selected) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Icon(
+                                                            imageVector = Icons.Rounded.Check,
+                                                            contentDescription = null,
+                                                            tint = option.onContainer(darkTheme),
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -780,14 +812,12 @@ fun NoteEditorScreen(
                         toolbarContentColor = MaterialTheme.colorScheme.onSurface
                     ),
                     modifier = Modifier
-                        .shadow(
-                            elevation = if (darkTheme) 8.dp else 4.dp,
-                            shape = CircleShape,
-                            clip = false
+                        .kluddraCardShadow(
+                            elevation = if (darkTheme) 12.dp else 7.dp,
+                            shape = CircleShape
                         )
                         .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (darkTheme) 0.65f else 0.45f),
+                            border = kluddraRaisedBorder(isColoredSurface = false),
                             shape = CircleShape
                         )
                 ) {
@@ -879,7 +909,119 @@ fun NoteEditorScreen(
                     }
                 }
             }
+            }
         }
     }
+    }
+}
+
+@Composable
+private fun NoteBlockRow(
+    block: NoteBlock,
+    numberedOrdinal: Int,
+    showEmptyHint: Boolean,
+    tfValue: TextFieldValue,
+    allowBodyFocus: Boolean,
+    focusRequester: FocusRequester,
+    boldVisualTransformation: BoldMarkdownVisualTransformation,
+    onToggleCheckbox: () -> Unit,
+    onValueChange: (TextFieldValue) -> Unit,
+    onFocused: () -> Unit,
+    onBackspaceWhenEmpty: () -> Unit
+) {
+    val semantics = LocalKluddraSemantics.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        when (block.type) {
+            NoteBlockType.CHECKBOX -> {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onToggleCheckbox)
+                ) {
+                    Icon(
+                        imageVector = if (block.isChecked) {
+                            Icons.Outlined.CheckBox
+                        } else {
+                            Icons.Outlined.CheckBoxOutlineBlank
+                        },
+                        contentDescription = null,
+                        tint = if (block.isChecked) {
+                            semantics.success
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+            NoteBlockType.NUMBERED -> {
+                Text(
+                    text = "$numberedOrdinal.",
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 2.dp, end = 4.dp)
+                )
+            }
+            NoteBlockType.PARAGRAPH -> Unit
+        }
+
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .padding(top = if (block.type == NoteBlockType.CHECKBOX) 3.dp else 0.dp)
+        ) {
+            if (showEmptyHint) {
+                Text(
+                    text = stringResource(R.string.editor_body_hint),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                )
+            }
+            BasicTextField(
+                value = tfValue,
+                onValueChange = onValueChange,
+                visualTransformation = boldVisualTransformation,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    color = if (block.type == NoteBlockType.CHECKBOX && block.isChecked) {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    } else {
+                        MaterialTheme.colorScheme.onBackground
+                    },
+                    textDecoration = if (block.type == NoteBlockType.CHECKBOX && block.isChecked) {
+                        TextDecoration.LineThrough
+                    } else {
+                        TextDecoration.None
+                    }
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusProperties { canFocus = allowBodyFocus }
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { fs ->
+                        if (fs.isFocused) onFocused()
+                    }
+                    .onPreviewKeyEvent { event ->
+                        if (event.type == KeyEventType.KeyDown &&
+                            event.key == Key.Backspace &&
+                            block.text.isEmpty()
+                        ) {
+                            onBackspaceWhenEmpty()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+            )
+        }
     }
 }

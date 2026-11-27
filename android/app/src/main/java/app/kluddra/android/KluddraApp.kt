@@ -19,16 +19,18 @@ class AppContainer(application: Application) {
     val cryptoManager: KeystoreCryptoManager = KeystoreCryptoManager()
     val preferences: KluddraPreferences = KluddraPreferences(application, cryptoManager)
     val apiClient: KluddraApiClient = KluddraApiClient(preferences)
-    val syncEngine: SyncEngine = SyncEngine(database, apiClient)
+    val syncEngine: SyncEngine = SyncEngine(database, apiClient, preferences)
     val syncScheduler: SyncScheduler = SyncScheduler(application)
-    val noteRepository: NoteRepository = NoteRepository(database, syncScheduler)
-    val shoppingRepository: ShoppingRepository = ShoppingRepository(database, syncScheduler)
+    val noteRepository: NoteRepository = NoteRepository(database, syncScheduler, preferences)
+    val shoppingRepository: ShoppingRepository = ShoppingRepository(database, syncScheduler, preferences)
     val authRepository: AuthRepository = AuthRepository(
         api = apiClient,
         preferences = preferences,
         db = database,
         syncEngine = syncEngine,
-        syncScheduler = syncScheduler
+        syncScheduler = syncScheduler,
+        noteRepository = noteRepository,
+        shoppingRepository = shoppingRepository
     )
     val localExporter: LocalExporter = LocalExporter(database.noteDao(), database.shoppingDao())
 }

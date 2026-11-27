@@ -1,5 +1,6 @@
 package app.kluddra.android.ui.shopping
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -7,14 +8,19 @@ import app.kluddra.android.data.local.ShoppingItemEntity
 import app.kluddra.android.data.repo.ShoppingRepository
 import app.kluddra.android.sync.SyncEngine
 import app.kluddra.android.sync.SyncStatus
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+@Immutable
 data class ShoppingListUiState(
     val activeItems: List<ShoppingItemEntity> = emptyList(),
     val checkedItems: List<ShoppingItemEntity> = emptyList(),
@@ -31,13 +37,22 @@ class ShoppingViewModel(
 
     private val isRefreshing = MutableStateFlow(false)
 
+    // Partition active vs checked items off the main thread and only when the Room table actually
+    // changes — so syncStatus / pendingCount ticks never re-allocate list references!
+    private val partitionedItems = repository.observeItems()
+        .distinctUntilChanged()
+        .map { items ->
+            val (checked, active) = items.partition { it.isChecked }
+            active to checked
+        }
+        .flowOn(Dispatchers.Default)
+
     val uiState: StateFlow<ShoppingListUiState> = combine(
-        repository.observeItems(),
+        partitionedItems,
         syncEngine.observedStatus,
-        pendingCountFlow,
+        pendingCountFlow.distinctUntilChanged(),
         isRefreshing
-    ) { items, sync, pending, refreshing ->
-        val (checked, active) = items.partition { it.isChecked }
+    ) { (active, checked), sync, pending, refreshing ->
         ShoppingListUiState(
             activeItems = active,
             checkedItems = checked,

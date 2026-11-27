@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,12 +20,15 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
@@ -55,6 +59,9 @@ import app.kluddra.android.R
 @Composable
 fun OnboardingScreen(
     state: OnboardingUiState,
+    onUseLocalOnly: () -> Unit,
+    onChooseServer: () -> Unit,
+    onBackFromServer: (() -> Unit)?,
     onServerUrlChange: (String) -> Unit,
     onProbeServer: () -> Unit,
     onConfirmLocalHttp: () -> Unit,
@@ -89,8 +96,8 @@ fun OnboardingScreen(
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 440.dp),
+                    .widthIn(max = 440.dp)
+                    .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Box(
@@ -109,6 +116,59 @@ fun OnboardingScreen(
                 }
 
                 when (state.step) {
+                    OnboardingStep.WELCOME -> {
+                        Text(
+                            text = stringResource(R.string.welcome_headline),
+                            style = MaterialTheme.typography.displaySmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.welcome_subtitle),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Button(
+                            onClick = onUseLocalOnly,
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Smartphone,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(stringResource(R.string.action_start_local))
+                        }
+
+                        FilledTonalButton(
+                            onClick = onChooseServer,
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(54.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Cloud,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(stringResource(R.string.action_connect_server))
+                        }
+
+                        Text(
+                            text = stringResource(R.string.welcome_later_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
                     OnboardingStep.ENTER_SERVER -> {
                         Text(
                             text = stringResource(R.string.onboarding_headline),
@@ -163,6 +223,15 @@ fun OnboardingScreen(
                                 )
                             } else {
                                 Text(stringResource(R.string.action_connect))
+                            }
+                        }
+
+                        if (onBackFromServer != null) {
+                            TextButton(
+                                onClick = onBackFromServer,
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                            ) {
+                                Text(stringResource(R.string.action_back))
                             }
                         }
                     }

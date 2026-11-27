@@ -1189,7 +1189,7 @@ func isValidSortOrder(s string) bool {
 
 func normalizeNoteColor(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "lavender", "pistachio", "salmon", "butter", "sky", "rose", "neutral":
+	case "lavender", "pistachio", "mint", "sky", "rose", "salmon", "peach", "butter", "sand", "neutral":
 		return strings.ToLower(strings.TrimSpace(raw))
 	default:
 		return ""

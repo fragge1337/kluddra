@@ -125,7 +125,7 @@
     <string name="confirm_sign_out_title">Abmelden?</string>
     <string name="confirm_sign_out_body">Lokale Notizen auf diesem Gerät werden gelöscht. Stelle sicher, dass alles synchronisiert ist.</string>
     <string name="settings_app_version">App-Version %1$s</string>
-    <string name="settings_privacy_note">Keine Werbung, kein Tracking, keine externen Cloud-Dienste.</string>
+    <string name="settings_privacy_note">Deine Daten. Dein Gerät. Deine eigene Cloud.</string>
     <string name="sync_dialog_title">Sync-Status</string>
     <string name="sync_last_synced">Zuletzt synchronisiert: %1$s</string>
     <string name="sync_never">Nie</string>
@@ -152,4 +152,23 @@
     <string name="sessions_revoked_others">%1$d andere Geräte abgemeldet</string>
     <string name="sessions_load_failed">Aktive Geräte konnten nicht geladen werden</string>
     <string name="sessions_action_failed">Aktive Geräte konnten nicht aktualisiert werden</string>
+    <string name="welcome_headline">Willkommen bei Kluddra</string>
+    <string name="welcome_subtitle">Private Notizen und Einkaufslisten – direkt auf deinem Gerät gespeichert, optional mit deinem eigenen Server synchronisiert.</string>
+    <string name="action_start_local">Lokal starten</string>
+    <string name="action_connect_server">Eigenen Server verbinden</string>
+    <string name="welcome_later_hint">Du kannst jederzeit in den Einstellungen deinen eigenen Kluddra-Server verbinden.</string>
+    <string name="settings_local_mode_title">Lokaler Modus (nur dieses Gerät)</string>
+    <string name="settings_local_mode_desc">Deine Notizen und Einkaufsliste bleiben privat auf diesem Gerät. Verbinde deinen eigenen Kluddra-Server, wenn du zwischen Geräten synchronisieren möchtest.</string>
+    <string name="confirm_sign_out_body_choice">Wähle, ob eine lokale Kopie auf diesem Gerät behalten oder alle lokalen Daten gelöscht werden sollen.</string>
+    <string name="action_sign_out_keep_local">Abmelden &amp; lokal behalten</string>
+    <string name="action_sign_out_clear_device">Abmelden &amp; Gerät leeren</string>
+    <string name="sort_notes">Notizen sortieren</string>
+    <string name="sort_updated_desc">Zuletzt bearbeitet</string>
+    <string name="sort_created_desc">Zuletzt erstellt</string>
+    <string name="sort_created_asc">Älteste zuerst</string>
+    <string name="sort_title_asc">Titel (A–Z)</string>
+    <string name="date_today_time">Heute %1$s</string>
+    <string name="date_yesterday">Gestern</string>
+    <string name="editor_meta_edited_created">Bearbeitet %1$s · Erstellt %2$s</string>
+    <string name="editor_meta_created">Erstellt %1$s</string>
 </resources>

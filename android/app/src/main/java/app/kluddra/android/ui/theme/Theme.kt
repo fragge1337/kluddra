@@ -18,6 +18,7 @@ import app.kluddra.android.data.prefs.ThemeMode
 
 val LocalKluddraDarkTheme = staticCompositionLocalOf { false }
 val LocalKluddraSemantics = staticCompositionLocalOf { KluddraLightSemanticColors }
+val LocalKluddraElevation = staticCompositionLocalOf { KluddraLightElevationColors }
 
 // Generous, soft, tactile Material 3 Expressive shapes
 val KluddraShapes = Shapes(
@@ -67,10 +68,12 @@ fun KluddraTheme(
     }
 
     val semantics = if (darkTheme) KluddraDarkSemanticColors else KluddraLightSemanticColors
+    val elevation = if (darkTheme) KluddraDarkElevationColors else KluddraLightElevationColors
 
     CompositionLocalProvider(
         LocalKluddraDarkTheme provides darkTheme,
-        LocalKluddraSemantics provides semantics
+        LocalKluddraSemantics provides semantics,
+        LocalKluddraElevation provides elevation
     ) {
         MaterialExpressiveTheme(
             colorScheme = colorScheme,

@@ -40,27 +40,16 @@ enum class NoteColor(
         swatchLight = Color(0xFFB7E08E),
         swatchDark = Color(0xFFB2E07E)
     ),
-    SALMON(
-        key = "salmon",
-        lightContainer = Color(0xFFFFD4C4),
-        lightOnContainer = Color(0xFF331309),
-        lightSecondaryText = Color(0xFF5E2C1D),
-        darkContainer = Color(0xFFF28864),
-        darkOnContainer = Color(0xFF240C05),
-        darkSecondaryText = Color(0xFF471B0E),
-        swatchLight = Color(0xFFF9B199),
-        swatchDark = Color(0xFFF28864)
-    ),
-    BUTTER(
-        key = "butter",
-        lightContainer = Color(0xFFFCECA8),
-        lightOnContainer = Color(0xFF2B2205),
-        lightSecondaryText = Color(0xFF544515),
-        darkContainer = Color(0xFFF4D565),
-        darkOnContainer = Color(0xFF211A03),
-        darkSecondaryText = Color(0xFF42360D),
-        swatchLight = Color(0xFFF5DB75),
-        swatchDark = Color(0xFFF4D565)
+    MINT(
+        key = "mint",
+        lightContainer = Color(0xFFCBF2E5),
+        lightOnContainer = Color(0xFF0A2B22),
+        lightSecondaryText = Color(0xFF214E42),
+        darkContainer = Color(0xFF8CE0C5),
+        darkOnContainer = Color(0xFF06211A),
+        darkSecondaryText = Color(0xFF164035),
+        swatchLight = Color(0xFF9FE4CE),
+        swatchDark = Color(0xFF8CE0C5)
     ),
     SKY(
         key = "sky",
@@ -84,16 +73,60 @@ enum class NoteColor(
         swatchLight = Color(0xFFFAB0CE),
         swatchDark = Color(0xFFF5A6C6)
     ),
+    SALMON(
+        key = "salmon",
+        lightContainer = Color(0xFFFFD4C4),
+        lightOnContainer = Color(0xFF331309),
+        lightSecondaryText = Color(0xFF5E2C1D),
+        darkContainer = Color(0xFFF28864),
+        darkOnContainer = Color(0xFF240C05),
+        darkSecondaryText = Color(0xFF471B0E),
+        swatchLight = Color(0xFFF9B199),
+        swatchDark = Color(0xFFF28864)
+    ),
+    PEACH(
+        key = "peach",
+        lightContainer = Color(0xFFFFE0B8),
+        lightOnContainer = Color(0xFF331C06),
+        lightSecondaryText = Color(0xFF5D3A18),
+        darkContainer = Color(0xFFF7B46E),
+        darkOnContainer = Color(0xFF261403),
+        darkSecondaryText = Color(0xFF4B2B0D),
+        swatchLight = Color(0xFFFAC687),
+        swatchDark = Color(0xFFF7B46E)
+    ),
+    BUTTER(
+        key = "butter",
+        lightContainer = Color(0xFFFCECA8),
+        lightOnContainer = Color(0xFF2B2205),
+        lightSecondaryText = Color(0xFF544515),
+        darkContainer = Color(0xFFF4D565),
+        darkOnContainer = Color(0xFF211A03),
+        darkSecondaryText = Color(0xFF42360D),
+        swatchLight = Color(0xFFF5DB75),
+        swatchDark = Color(0xFFF4D565)
+    ),
+    SAND(
+        key = "sand",
+        lightContainer = Color(0xFFEFE4D0),
+        lightOnContainer = Color(0xFF2A2218),
+        lightSecondaryText = Color(0xFF544838),
+        darkContainer = Color(0xFFD9C5A3),
+        darkOnContainer = Color(0xFF211A10),
+        darkSecondaryText = Color(0xFF443828),
+        swatchLight = Color(0xFFDFCEB0),
+        swatchDark = Color(0xFFD9C5A3)
+    ),
     NEUTRAL(
         key = "neutral",
         lightContainer = Color(0xFFFFFFFF),
         lightOnContainer = Color(0xFF1C1A21),
         lightSecondaryText = Color(0xFF4E4A57),
-        darkContainer = Color(0xFF28282B),
-        darkOnContainer = Color(0xFFF2F2F4),
-        darkSecondaryText = Color(0xFFC2C2C7),
+        darkContainer = Color(0xFF2E303A),
+        darkOnContainer = Color(0xFFF2F2F6),
+        darkSecondaryText = Color(0xFFC4C5CF),
         swatchLight = Color(0xFFE9E6EF),
-        swatchDark = Color(0xFF3E3E44)
+        swatchDark = Color(0xFF464958)
     );
 
     fun container(darkTheme: Boolean): Color = if (darkTheme) darkContainer else lightContainer
@@ -103,21 +136,26 @@ enum class NoteColor(
 
     /**
      * Softly tinted canvas color for the Note Editor screen: airy pastel stationery wash in
-     * Light Mode and subtle pigmented charcoal in Dark Mode, preserving effortless readability.
+     * Light Mode and dimmed pigmented slate in Dark Mode, preserving effortless readability.
      */
     fun editorBackground(darkTheme: Boolean, neutralBackground: Color): Color = when (this) {
-        LAVENDER -> if (darkTheme) Color(0xFF231F2B) else Color(0xFFF3EEFD)
-        PISTACHIO -> if (darkTheme) Color(0xFF1E261C) else Color(0xFFEDF8E2)
-        SALMON -> if (darkTheme) Color(0xFF2A1F1C) else Color(0xFFFFEFE9)
-        BUTTER -> if (darkTheme) Color(0xFF27241A) else Color(0xFFFEF8DF)
-        SKY -> if (darkTheme) Color(0xFF1B232B) else Color(0xFFEAF5FF)
-        ROSE -> if (darkTheme) Color(0xFF291E24) else Color(0xFFFFEEF5)
+        LAVENDER -> if (darkTheme) Color(0xFF262330) else Color(0xFFF3EEFD)
+        PISTACHIO -> if (darkTheme) Color(0xFF212922) else Color(0xFFEDF8E2)
+        MINT -> if (darkTheme) Color(0xFF1D2926) else Color(0xFFE9FAF4)
+        SKY -> if (darkTheme) Color(0xFF1F2730) else Color(0xFFEAF5FF)
+        ROSE -> if (darkTheme) Color(0xFF2B2128) else Color(0xFFFFEEF5)
+        SALMON -> if (darkTheme) Color(0xFF2C2221) else Color(0xFFFFEFE9)
+        PEACH -> if (darkTheme) Color(0xFF2B241C) else Color(0xFFFFF4E6)
+        BUTTER -> if (darkTheme) Color(0xFF29261E) else Color(0xFFFEF8DF)
+        SAND -> if (darkTheme) Color(0xFF28251F) else Color(0xFFF8F3EA)
         NEUTRAL -> neutralBackground
     }
 
     companion object {
         /** Vibrant curated colors used for smart automatic non-adjacent assignment. */
-        val autoPalette: List<NoteColor> = listOf(LAVENDER, PISTACHIO, SALMON, BUTTER, SKY, ROSE)
+        val autoPalette: List<NoteColor> = listOf(
+            LAVENDER, PISTACHIO, MINT, SKY, ROSE, SALMON, PEACH, BUTTER, SAND
+        )
 
         fun fromKey(key: String?): NoteColor {
             if (key.isNullOrBlank()) return LAVENDER
