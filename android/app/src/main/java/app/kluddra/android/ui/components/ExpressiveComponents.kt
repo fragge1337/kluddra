@@ -71,6 +71,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -79,6 +80,7 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
@@ -135,7 +137,8 @@ fun Modifier.kluddraCardShadow(
     )
 }
 
-private val NoteCardShape = RoundedCornerShape(28.dp)
+private val NoteCardCornerRadius = 28.dp
+private val NoteCardShape = RoundedCornerShape(NoteCardCornerRadius)
 
 /**
  * Browser-style scroll-collapsible top bar controller used in compact-height phone landscape
@@ -929,10 +932,16 @@ fun NoteCard(
     )
 
     val shape = NoteCardShape
-    val border = when {
-        isSelected -> BorderStroke(2.5.dp, MaterialTheme.colorScheme.primary)
-        palette == NoteColor.NEUTRAL -> kluddraRaisedBorder(isColoredSurface = false)
-        else -> kluddraRaisedBorder(isColoredSurface = true)
+    val selectionAlpha by animateFloatAsState(
+        targetValue = if (isSelected) 1f else 0f,
+        animationSpec = tween(160),
+        label = "note_card_selection_ring"
+    )
+    val ringColor = MaterialTheme.colorScheme.primary
+    val border = if (palette == NoteColor.NEUTRAL) {
+        kluddraRaisedBorder(isColoredSurface = false)
+    } else {
+        kluddraRaisedBorder(isColoredSurface = true)
     }
 
     // Dynamic height driven by actual note length: short notes stay compact, longer notes grow naturally tall!
@@ -973,6 +982,21 @@ fun NoteCard(
         modifier = modifier
             .fillMaxWidth()
             .then(scaleModifier)
+            .drawBehind {
+                if (selectionAlpha > 0.001f) {
+                    val gapPx = 3.dp.toPx()
+                    val strokePx = 2.5.dp.toPx()
+                    val outset = gapPx + strokePx / 2f
+                    val cornerPx = NoteCardCornerRadius.toPx() + outset
+                    drawRoundRect(
+                        color = ringColor.copy(alpha = selectionAlpha),
+                        topLeft = Offset(-outset, -outset),
+                        size = Size(size.width + outset * 2f, size.height + outset * 2f),
+                        cornerRadius = CornerRadius(cornerPx, cornerPx),
+                        style = Stroke(width = strokePx)
+                    )
+                }
+            }
             .kluddraCardShadow(
                 elevation = if (darkTheme) 9.dp else 5.dp,
                 shape = shape
