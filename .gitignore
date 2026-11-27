@@ -20,6 +20,8 @@ coverage.out
 android/.gradle/
 android/.kotlin/
 android/local.properties
+android/keystore.properties
+keystore.properties
 android/**/build/
 android/captures/
 android/.cxx/
@@ -27,6 +29,8 @@ android/.cxx/
 *.aab
 *.jks
 *.keystore
+*.p12
+*.pem
 
 # Deploy runtime data
 deploy/data/

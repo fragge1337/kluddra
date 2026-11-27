@@ -1,9 +1,33 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
+
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.isFile) {
+        file.inputStream().use { load(it) }
+    }
+}
+
+val releaseStoreFilePath: String? =
+    keystoreProperties.getProperty("storeFile") ?: System.getenv("KLUDDRA_KEYSTORE_PATH")
+val releaseStorePassword: String? =
+    keystoreProperties.getProperty("storePassword") ?: System.getenv("KLUDDRA_KEYSTORE_PASSWORD")
+val releaseKeyAlias: String? =
+    keystoreProperties.getProperty("keyAlias") ?: System.getenv("KLUDDRA_KEY_ALIAS")
+val releaseKeyPassword: String? =
+    keystoreProperties.getProperty("keyPassword") ?: System.getenv("KLUDDRA_KEY_PASSWORD")
+val releaseStoreFile = releaseStoreFilePath?.let { rootProject.file(it) }
+val hasReleaseSigning = releaseStoreFile != null &&
+    !releaseStorePassword.isNullOrBlank() &&
+    !releaseKeyAlias.isNullOrBlank() &&
+    !releaseKeyPassword.isNullOrBlank() &&
+    releaseStoreFile.isFile
 
 android {
     namespace = "app.kluddra.android"
@@ -19,10 +43,27 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -32,6 +73,13 @@ android {
             initWith(getByName("release"))
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
+        }
+    }
+
+    bundle {
+        language {
+            // Keep all 11 supported locales bundled so Android Per-App Language works immediately offline
+            enableSplit = false
         }
     }
 
