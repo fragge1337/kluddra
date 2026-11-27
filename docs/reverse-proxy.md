@@ -22,4 +22,4 @@ notes.example.com {
 
 ## Tailscale / VPN (utan publika portar)
 
-Om du använder Tailscale kan du aktivera **Tailscale Serve (`tailscale serve https / http://127.0.0.1:8080`)** och ansluta med din privata `https://<nas>.<tailnet>.ts.net`-adress utan att öppna några portar i routern.
+Om du använder Tailscale kan du aktivera **Tailscale Serve (`tailscale serve https / http://127.0.0.1:8420`)** och ansluta med din privata `https://<nas>.<tailnet>.ts.net`-adress utan att öppna några portar i routern.

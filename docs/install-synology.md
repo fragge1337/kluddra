@@ -26,11 +26,15 @@ Denna guide visar hur du kör **Kluddra Server** som en enda lättvikts-containe
 
 1. Öppna **Kontrollpanelen → Inloggningsportal → Avancerat → Omvänd proxy → Skapa**.
 2. **Källa:** Protokoll `HTTPS`, värdnamn `notes.mindoman.se`, port `443`, aktivera HSTS.
-3. **Destination:** Protokoll `HTTP`, värdnamn `localhost`, port `8080`.
+3. **Destination:** Protokoll `HTTP`, värdnamn **`127.0.0.1`** *(använd `127.0.0.1` i stället för `localhost` för att undvika IPv6-`502 Bad Gateway`)*, port **`8420`**.
 4. Koppla ett Let's Encrypt-certifikat under **Kontrollpanelen → Säkerhet → Certifikat**.
+5. Verifiera i webbläsaren att `https://notes.mindoman.se/api/v1/health` svarar `{"status":"ok"}`.
+
+> **Tips:** `deploy/docker-compose.yml` använder ett fast litet Docker-nätverk (`172.30.80.0/29`, gateway `172.30.80.1`) och litar automatiskt på `172.30.80.1/32` i `KLUDDRA_TRUSTED_PROXIES`. Det gör att Synologys reverse proxy alltid skickar vidare verklig extern klient-IP till Kluddras rate-limiter och säkerhetsloggar.
 
 ## 5. Anslut från Kluddra Android
 
 1. Öppna Kluddra-appen på din telefon eller surfplatta.
 2. Ange `https://notes.mindoman.se`.
 3. Skriv in engångskoden från steg 3 samt välj användarnamn och ett starkt lösenord. Klart!
+4. *(Valfri kontroll)* Öppna **Container Manager → Containrar → kluddra → Logg** och kontrollera att `client_ip` vid `setup_completed` visar din externa IP-adress (inte `172.30.80.1`).

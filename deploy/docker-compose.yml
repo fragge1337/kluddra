@@ -6,20 +6,24 @@ services:
     # your NAS permissions. If omitted, Kluddra safely defaults to nonroot (65532:65532), never root.
     # user: "1032:100"
     restart: unless-stopped
-    # Bind to localhost by default so Kluddra is only reachable through your reverse proxy
-    # (Synology Reverse Proxy, Caddy, Nginx Proxy Manager, Traefik).
-    # For maximum isolation, remove `ports` and connect Kluddra and your reverse proxy via
-    # a shared `internal: true` Docker network (example below) so the container has zero
-    # outbound internet access.
+    # Bind to localhost on host port 8420 (remapped to container port 8080) so Kluddra is
+    # only reachable through your reverse proxy (Synology Reverse Proxy, Caddy, Nginx, Traefik)
+    # and avoids collisions with common NAS apps on 8080.
+    # Note: `internal: true` on a Docker network disables host `ports:` publishing and only works
+    # when your reverse proxy also runs as a Docker container on the same internal network.
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8420:8080"
+    networks:
+      - kluddra_net
     volumes:
       - ./data:/data
     environment:
       - KLUDDRA_PORT=8080
       - KLUDDRA_DATA_DIR=/data
-      # Narrow to your exact reverse proxy IP/CIDR (e.g. 127.0.0.1/32 or your proxy container subnet).
-      - KLUDDRA_TRUSTED_PROXIES=127.0.0.1/32
+      # Trust both localhost and this compose network's fixed bridge gateway (172.30.80.1)
+      # so host-based reverse proxies (e.g. Synology DSM Reverse Proxy) pass real client IPs
+      # to Kluddra's rate limiter and security logs without trusting arbitrary proxies.
+      - KLUDDRA_TRUSTED_PROXIES=127.0.0.1/32,172.30.80.1/32
       - KLUDDRA_BACKUP_ENABLED=true
       - KLUDDRA_BACKUP_RETAIN_DAYS=14
       - KLUDDRA_TRASH_RETAIN_DAYS=30
@@ -38,7 +42,11 @@ services:
       retries: 3
       start_period: 5s
 
-# Optional zero-egress network isolation (prevents outbound data exfiltration even if compromised):
-# networks:
-#   kluddra_internal:
-#     internal: true
+# Dedicated bridge network with a fixed gateway IP (172.30.80.1) matching KLUDDRA_TRUSTED_PROXIES.
+networks:
+  kluddra_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.80.0/29
+          gateway: 172.30.80.1
