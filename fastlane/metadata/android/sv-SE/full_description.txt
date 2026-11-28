@@ -1,0 +1,25 @@
+Din data. Din enhet. Ditt eget moln.
+
+Kluddra är en snabb, modern och öppen källkods-app för anteckningar och inköpslistor byggd med Material 3 Expressive och fullständig integritet i fokus. Börja använda appen direkt på din enhet – utan konto, reklam eller spårning – eller anslut din egen självhostade Kluddra-server när du vill synka mellan telefon och surfplatta.
+
+ANTECKNINGAR UTAN KRÅNGEL
+• Börja skriva direkt – rubrik är frivillig och skapas automatiskt vid behov.
+• Checklistor, numrerade listor och fetstil med en smidig svävande verktygsrad.
+• 10 kalibrerade pastellfärger för både ljust och mörkt tema.
+• Fäst viktiga anteckningar överst och skrivskydda anteckningar för säker läsning och kopiering.
+• Blixtsnabb lokal fulltextsökning, datumstämplar och 4-vägssortering (Senast ändrad, Senast skapad, Äldst skapad, Titel A–Ö).
+• Dela text direkt till Kluddra från andra appar och exportera allt när som helst som JSON eller Markdown-ZIP.
+
+SMIDIG INKÖPSLISTA
+• Dedikerad flik för inköpslistan med blixtsnabb inmatning direkt i listan.
+• Dra-och-släpp-sortering, tydlig avbockning och rensa klara med ett tryck och ångra-stöd.
+
+BYGGD FÖR BÅDE TELEFON & SURFPLATTA
+• Adaptiv tvåspaltsvy med centrerad sidopanel på surfplattor.
+• Rymligt liggande läge på telefoner där toppraden fälls in vid skrollning.
+• Finns på 11 språk med stöd för Androids appspecifika språkval.
+
+INTEGRITET FÖRST – LOKALT ELLER EGEN SERVER
+• Fungerar 100 % offline utan ett enda nätverksanrop i lokalt läge.
+• Valfri konfliktsäker synkronisering mot din egen Kluddra-server (Docker / Synology / Raspberry Pi / Linux).
+• Ingen reklam, ingen spårning, ingen telemetri. Öppen källkod under Apache-2.0.

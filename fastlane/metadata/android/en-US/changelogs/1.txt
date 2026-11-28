@@ -1,0 +1,5 @@
+First release of Kluddra!
+• Local-first notes with 10 pastel colors, checklists, numbered lists, pinning, read-only lock, full-text search, dates & 4-way sorting
+• Dedicated shopping list with inline add & drag-and-drop sorting
+• Optional conflict-safe sync to your own self-hosted Kluddra Server
+• Adaptive Material 3 Expressive design for phones and tablets in Light & Dark themes

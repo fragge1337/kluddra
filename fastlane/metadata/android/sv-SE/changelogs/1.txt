@@ -1,0 +1,5 @@
+Första versionen av Kluddra!
+• Lokala anteckningar med 10 färger, checklistor, numrerade listor, fastnålning, skrivskydd, fulltextsökning, datum och sortering
+• Dedikerad inköpslista med snabb inmatning och dra-och-släpp
+• Valfri konfliktsäker synk mot din egen självhostade Kluddra-server
+• Adaptiv Material 3 Expressive-design för telefon och surfplatta i ljust och mörkt läge

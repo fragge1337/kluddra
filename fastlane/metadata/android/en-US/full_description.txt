@@ -1,0 +1,25 @@
+Your data. Your device. Your own cloud.
+
+Kluddra is a fast, modern, open-source notes and shopping list app built with Material 3 Expressive design and complete privacy at its core. Start using it immediately on your device — with zero accounts, zero ads, and zero tracking — or connect your own self-hosted Kluddra Server whenever you want seamless sync across your phone and tablet.
+
+NOTES THAT STAY OUT OF YOUR WAY
+• Start writing immediately — titles are optional and auto-derived from your note.
+• Checklists, numbered lists, and bold formatting with a clean floating toolbar.
+• 10 calibrated pastel note colors for both Light and dimmed Dark themes.
+• Pin important notes to the top tray and lock read-only notes so you can read or copy without accidental edits.
+• Instant local full-text search, timestamps, and 4-way sorting (Last edited, Newest, Oldest, Title A–Z).
+• Share text directly into Kluddra from any Android app, and export everything anytime as JSON or Markdown ZIP.
+
+EFFORTLESS SHOPPING LIST
+• Dedicated one-handed shopping tab with instant inline item entry.
+• Drag-and-drop reordering, satisfying check-off animations, and one-tap clear completed with Undo.
+
+DESIGNED FOR PHONES & TABLETS
+• Adaptive dual-pane layout with a centered navigation rail on tablets.
+• Spacious landscape mode on phones with an auto-hiding header while scrolling.
+• Available in 11 European languages with Android Per-App Language support.
+
+PRIVACY FIRST — LOCAL OR SELF-HOSTED
+• Works 100% offline with zero network calls in local-only mode.
+• Optional sync to your own self-hosted Kluddra Server (Docker / Synology / Raspberry Pi / Linux) with conflict-safe sync that never silently loses edits.
+• No ads, no analytics, no telemetry, no third-party cloud lock-in. Open-source under Apache-2.0.
